@@ -1,0 +1,33 @@
+# CODEOWNERS: who must review changes to each part of the repo.
+# Later rules override earlier ones. Docs: https://docs.github.com/articles/about-code-owners
+#
+# TODO (Nikhil): once Prabhat, Ravi and Monu share their GitHub usernames and accept the
+# collaborator invite, replace the commented placeholders below with real @usernames.
+# An unknown @username makes this file invalid, so keep the lines commented until then.
+
+# Default and frozen files (setup): Nikhil
+*                         @Nikhil04-ai
+
+# ---- Nikhil: word data pipeline + CRNN ----
+/scripts/make_toy_data.py @Nikhil04-ai
+/scripts/prepare_iiit.py  @Nikhil04-ai
+/data/processed/words/    @Nikhil04-ai
+/src/crnn/                @Nikhil04-ai
+/configs/crnn/            @Nikhil04-ai
+
+# ---- Prabhat: TrOCR + augmentation + EDA ----
+# /src/trocr/             @PRABHAT_USERNAME
+# /configs/trocr/         @PRABHAT_USERNAME
+# /src/data_words/        @PRABHAT_USERNAME
+# /notebooks/data/        @PRABHAT_USERNAME
+
+# ---- Ravi: character CNN + summary + demo ----
+# /src/char_cnn/          @RAVI_USERNAME
+# /configs/char_cnn/      @RAVI_USERNAME
+# /results/summary/       @RAVI_USERNAME
+# /app/                   @RAVI_USERNAME
+
+# ---- Monu: error analysis + README + report ----
+# /notebooks/analysis/    @MONU_USERNAME
+# /README.md              @MONU_USERNAME
+# /report/                @MONU_USERNAME

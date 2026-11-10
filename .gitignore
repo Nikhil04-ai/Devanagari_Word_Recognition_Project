@@ -1,0 +1,61 @@
+# ---- Project data & models (never commit these) ----
+data/raw/
+data/processed/toy/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+
+# Exception: the real word manifests + vocab ARE committed (small text files, identical splits for everyone)
+!data/processed/words/
+!data/processed/words/*.csv
+!data/processed/words/vocab.txt
+
+# ---- Experiment tracking ----
+wandb/
+runs/
+lightning_logs/
+mlruns/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+.env
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- Gradio ----
+.gradio/
+flagged/
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Archives / downloads ----
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
