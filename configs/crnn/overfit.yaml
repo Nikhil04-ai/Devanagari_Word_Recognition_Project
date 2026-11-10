@@ -1,0 +1,17 @@
+# Sanity check: the model must memorise 100 training images (CER -> 0) before any full run.
+# python -m src.crnn.train --config configs/crnn/overfit.yaml
+data_dir: data/processed/words
+train_csv: train.csv
+val_csv: val.csv
+image_root: .
+overfit_n: 100
+epochs: 150
+batch_size: 20
+lr: 0.002
+weight_decay: 0.0
+num_workers: 0
+patience: 1000
+max_minutes: 25
+ckpt_dir: checkpoints/crnn_overfit
+run_name: crnn_overfit
+invert: false

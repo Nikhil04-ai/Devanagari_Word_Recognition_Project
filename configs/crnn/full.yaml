@@ -1,0 +1,20 @@
+# Full CRNN-CTC run on the real IIIT-HW-Dev data (Kaggle GPU).
+# python -m src.crnn.train --config configs/crnn/full.yaml
+data_dir: data/processed/words
+train_csv: train.csv
+val_csv: val.csv
+image_root: .          # image_path in the CSVs is relative to the repo root
+epochs: 30
+batch_size: 64
+lr: 0.001
+weight_decay: 0.0001
+grad_clip: 5.0
+num_workers: 2
+seed: 42
+patience: 8
+max_minutes: 150       # time budget: stops cleanly and keeps best.pt
+ckpt_dir: checkpoints/crnn_full
+run_name: crnn_full
+hidden: 256
+dropout: 0.3
+invert: false          # set true if the ink is white on a dark background
