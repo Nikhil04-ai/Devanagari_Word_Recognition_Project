@@ -1,0 +1,18 @@
+{
+  "run_name": "crnn_full_greedy",
+  "num_samples": 12869,
+  "cer": 0.06590246745677093,
+  "wer": 0.26054860517522727,
+  "accuracy": 0.7394513948247727,
+  "model": "crnn",
+  "train_subset": "full",
+  "decoding": "greedy",
+  "params": 7707429,
+  "train_time_min": 82.12,
+  "ms_per_image": 3.555,
+  "best_epoch": 21,
+  "n_test_seen_words": 12869,
+  "n_test_unseen_words": 0,
+  "cer_seen_words": 0.06590246745677093,
+  "cer_unseen_words": null
+}
