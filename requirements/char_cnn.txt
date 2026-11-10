@@ -1,0 +1,4 @@
+# Owner: Ravi (character CNN, results summary, demo)
+scikit-learn
+seaborn
+gradio

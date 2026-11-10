@@ -1,0 +1,7 @@
+# FROZEN: only includes the per-owner files below. Add packages to YOUR OWN file in requirements/.
+-r requirements/base.txt
+-r requirements/data.txt
+-r requirements/crnn.txt
+-r requirements/trocr.txt
+-r requirements/char_cnn.txt
+-r requirements/analysis.txt
