@@ -1,40 +1,50 @@
 # Devanagari Word Recognition: CRNN-CTC vs Transformer OCR
 
-Deep Learning group project **P09**. The project recognises handwritten Hindi (Devanagari) characters and words, which is a low-resource OCR problem. It compares three model families:
+Handwritten Hindi (Devanagari) recognition is a low-resource OCR problem. Words are joined by a headline (shirorekha), vowel signs (matras) attach on all sides of a letter, and half-letters form conjuncts. This project compares three model families on the same script, at character level and at word level.
 
-| Model | Task | Dataset |
+## What we are building
+
+| Model | Input → Output | Dataset |
 |---|---|---|
-| **A: CNN classifier** | Single character → 1 of 46 classes | UCI Devanagari Handwritten Character Dataset (DHCD) |
+| **A: CNN classifier** | 32×32 character image → one of 46 classes | [UCI Devanagari Handwritten Character Dataset (DHCD)](https://archive.ics.uci.edu/dataset/389) |
 | **B: CRNN (CNN + BiLSTM + CTC)** | Word image → Unicode text | IIIT-HW-Dev (CVIT, IIIT Hyderabad) |
 | **C: TrOCR-style encoder-decoder** | Word image → Unicode text | IIIT-HW-Dev |
 
-The main outputs are character and word error rates (CER and WER) across the three models, and a low-resource experiment that trains on 10%, 25%, 50% and 100% of the data.
+## What we will do
 
-> **Status:** repository initialised. Project setup (shared code, contracts, folder skeleton) is next.
+1. **Prepare the data.** Clean the IIIT-HW-Dev word images, normalise all labels to Unicode NFC, build the character vocabulary, and create fixed train/validation/test splits plus 10%, 25% and 50% training subsets.
+2. **Train the three models.** The CNN classifies single characters. The CRNN reads a word as a sequence and is trained with CTC loss. The TrOCR-style model fine-tunes a pre-trained Vision Transformer encoder with a Devanagari character decoder.
+3. **Compare them.** Report character error rate (CER) and word error rate (WER) for every model, with greedy, beam-search and lexicon decoding for the CRNN.
+4. **Test low-resource behaviour.** Train the CRNN and TrOCR on 10%, 25%, 50% and 100% of the data and plot CER against training-set size.
+5. **Analyse the errors.** Find which characters, matras and conjuncts are confused, and how error depends on word length.
+6. **Build a demo.** A Gradio app that takes an uploaded image and shows each model's prediction.
 
-## Team
+All models are evaluated with the same metric code so the numbers are directly comparable.
 
-| Member | Share | Responsibilities |
-|---|---|---|
-| Nikhil | 30% + setup | Project setup and team lead; toy and real word data pipeline; CRNN-CTC model |
-| Prabhat | 30% | TrOCR model; augmentation; exploratory data analysis |
-| Ravi | 20% | Character CNN; results summary; Gradio demo |
-| Monu | 20% | Error analysis; README; report writing and merge |
+## Contributions
 
-The full plan, including the step order, file ownership and AI prompts for each member, is in [docs/P09_Devanagari_OCR_Team_Plan.pdf](docs/P09_Devanagari_OCR_Team_Plan.pdf).
+| Member | Work |
+|---|---|
+| **Nikhil** | Project setup and repository; toy and real word dataset pipeline; CRNN-CTC model |
+| **Prabhat** | TrOCR model; data augmentation; exploratory data analysis |
+| **Ravi** | CNN character classifier; results tables and plots; Gradio demo |
+| **Monu** | Error analysis; README; project report and slides |
 
-## How we work
+## Repository layout
 
-- Each member works on **their own branch**: `nikhil-crnn`, `prabhat-trocr`, `ravi-charcnn`, `monu-analysis`.
-- Each member edits **only the files they own** (see Section 5 of the plan). Never run `git add .`.
-- Open a pull request to `main` at least once a week. Nikhil reviews the others' PRs, and Prabhat reviews Nikhil's.
-- Datasets and checkpoints are **never** committed. They are shared through a private team Drive or Kaggle dataset.
+Created step by step as the project progresses.
 
-```bash
-git clone https://github.com/Nikhil04-ai/Devanagari_Word_Recognition_Project.git
-cd Devanagari_Word_Recognition_Project
-git checkout -b <your-branch>
 ```
+src/         model, data and shared code (common/, crnn/, trocr/, char_cnn/, data_words/)
+configs/     YAML experiment configs
+scripts/     dataset preparation scripts
+notebooks/   data exploration and error analysis
+app/         Gradio demo
+results/     metrics, predictions and plots
+report/      report sections
+```
+
+Datasets and trained checkpoints are not stored in Git.
 
 ## References
 
