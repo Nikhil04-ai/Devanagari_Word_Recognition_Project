@@ -52,9 +52,9 @@ save_results(run_name, image_paths, refs, hyps, extra) writes:
   results/<run_name>/metrics.json
 
 Required keys in `extra`:
-  "model"          : "char_cnn" | "char_resnet18" | "crnn" | "trocr"
+  "model"          : "char_cnn" | "crnn" | "trocr"
   "train_subset"   : "p10" | "p25" | "p50" | "full"
-  "decoding"       : "argmax" | "greedy" | "beam" | "beam_lexicon"
+  "decoding"       : "argmax" | "greedy" | "beam"
   "params"         : number of trainable parameters (int)
   "train_time_min" : total training minutes (float)
   "ms_per_image"   : average inference time per image on GPU (float)

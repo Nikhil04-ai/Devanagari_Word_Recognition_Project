@@ -1,5 +1,3 @@
-# Owner: Prabhat (TrOCR + augmentation)
+# Owner: Prabhat (TrOCR)
 transformers
 accelerate
-opencv-python
-albumentations
