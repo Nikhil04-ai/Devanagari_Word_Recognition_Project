@@ -17,7 +17,7 @@ Filled in when the runs finish (test set, used once). Numbers come from `results
 | Model | Level | Decoding | CER ↓ | WER ↓ | Accuracy ↑ |
 |---|---|---|---|---|---|
 | A: CNN | Character | argmax | TODO | n/a | TODO |
-| B: CRNN-CTC | Word | greedy | TODO | TODO | TODO |
+| B: CRNN-CTC | Word | greedy | 6.59 % | 26.05 % | 73.95 % |
 | C: TrOCR-style | Word | greedy | TODO | TODO | TODO |
 
 ## What each member did
