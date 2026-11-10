@@ -1,6 +1,6 @@
 # 3. Datasets and preprocessing
 
-*Owner: Nikhil. Replace every TODO with a number from `scripts/prepare_iiit.py` output; delete the italic notes.*
+*Owner: Nikhil. All numbers are produced by `scripts/prepare_iiit.py` (see `data/processed/words/stats.json`).*
 
 ## 3.1 Character dataset: DHCD
 
