@@ -44,7 +44,20 @@ results/     metrics, predictions and plots
 report/      report sections
 ```
 
-Datasets and trained checkpoints are not stored in Git.
+Datasets and trained checkpoints are not stored in Git. The agreed data formats and APIs are in [CONTRACTS.md](CONTRACTS.md).
+
+## Getting started
+
+```bash
+git clone https://github.com/Nikhil04-ai/Devanagari_Word_Recognition_Project.git
+cd Devanagari_Word_Recognition_Project
+python -m venv .venv
+.venv\Scripts\activate          # Linux/Mac: source .venv/bin/activate
+pip install -r requirements.txt
+python -m pytest -q             # all tests should pass
+```
+
+Run every command from the repository root.
 
 ## References
 

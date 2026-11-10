@@ -1,0 +1,5 @@
+# Owner: Prabhat (TrOCR + augmentation)
+transformers
+accelerate
+opencv-python
+albumentations
