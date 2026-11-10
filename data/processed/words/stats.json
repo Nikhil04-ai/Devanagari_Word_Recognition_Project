@@ -1,0 +1,91 @@
+{
+  "dropped": {
+    "train": {},
+    "val": {},
+    "test": {}
+  },
+  "train_raw_lines": 69853,
+  "train_labels_changed_by_nfc": 1841,
+  "val_raw_lines": 12708,
+  "val_labels_changed_by_nfc": 316,
+  "test_raw_lines": 12869,
+  "test_labels_changed_by_nfc": 331,
+  "vocab_size_code_points": 100,
+  "hyphen_in_vocab": true,
+  "train": {
+    "images": 69853,
+    "distinct_words": 9495,
+    "writers": 7,
+    "pages": 1823,
+    "label_len_median": 6,
+    "label_len_p95": 10,
+    "label_len_max": 23,
+    "images_wider_than_512_after_resize": 9,
+    "images_narrower_than_128_after_resize": 11887,
+    "resized_width_median": 162,
+    "labels_too_long_for_ctc": 0,
+    "chars_not_in_train_vocab": {},
+    "rows_with_char_not_in_train_vocab": 0,
+    "share_of_images_whose_word_is_in_train": 1.0,
+    "distinct_words_not_in_train": 0,
+    "numeric_labels": 233,
+    "writer_ids": [
+      "1",
+      "2",
+      "4",
+      "5",
+      "7",
+      "8",
+      "10"
+    ]
+  },
+  "val": {
+    "images": 12708,
+    "distinct_words": 8566,
+    "writers": 2,
+    "pages": 332,
+    "label_len_median": 6.0,
+    "label_len_p95": 10,
+    "label_len_max": 23,
+    "images_wider_than_512_after_resize": 1,
+    "images_narrower_than_128_after_resize": 2141,
+    "resized_width_median": 162.0,
+    "labels_too_long_for_ctc": 0,
+    "chars_not_in_train_vocab": {},
+    "rows_with_char_not_in_train_vocab": 0,
+    "share_of_images_whose_word_is_in_train": 1.0,
+    "distinct_words_not_in_train": 0,
+    "numeric_labels": 38,
+    "writer_ids": [
+      "3",
+      "12"
+    ]
+  },
+  "test": {
+    "images": 12869,
+    "distinct_words": 6907,
+    "writers": 3,
+    "pages": 336,
+    "label_len_median": 6,
+    "label_len_p95": 10,
+    "label_len_max": 22,
+    "images_wider_than_512_after_resize": 0,
+    "images_narrower_than_128_after_resize": 2167,
+    "resized_width_median": 162,
+    "labels_too_long_for_ctc": 0,
+    "chars_not_in_train_vocab": {},
+    "rows_with_char_not_in_train_vocab": 0,
+    "share_of_images_whose_word_is_in_train": 1.0,
+    "distinct_words_not_in_train": 0,
+    "numeric_labels": 39,
+    "writer_ids": [
+      "6",
+      "9",
+      "11"
+    ]
+  },
+  "writers_shared_train_val": [],
+  "writers_shared_train_test": [],
+  "writers_shared_val_test": [],
+  "share_of_300_train_samples_with_light_background": 1.0
+}
