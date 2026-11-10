@@ -1,8 +1,6 @@
 # Devanagari Word Recognition: CRNN-CTC vs Transformer OCR
 
-Handwritten Hindi (Devanagari) recognition is a low-resource OCR problem. Words are joined by a headline (shirorekha), vowel signs (matras) attach on all sides of a letter, and half-letters form conjuncts. This project compares three model families on the same script, at character level and at word level.
-
-## What we are building
+Handwritten Hindi (Devanagari) recognition is a low-resource OCR problem. Words are joined by a headline (shirorekha), vowel signs (matras) attach on all sides of a letter, and half-letters form conjuncts. This project compares three model families on the same script, at character level and at word level:
 
 | Model | Input → Output | Dataset |
 |---|---|---|
@@ -10,41 +8,26 @@ Handwritten Hindi (Devanagari) recognition is a low-resource OCR problem. Words 
 | **B: CRNN (CNN + BiLSTM + CTC)** | Word image → Unicode text | IIIT-HW-Dev (CVIT, IIIT Hyderabad) |
 | **C: TrOCR-style encoder-decoder** | Word image → Unicode text | IIIT-HW-Dev |
 
-## What we will do
+All three are scored with the same metric code (`src/common/metrics.py`). The CNN is tested on isolated characters and the word models on whole words, so their error rates are **not directly comparable**; the report explains this.
 
-1. **Prepare the data.** Clean the IIIT-HW-Dev word images, normalise all labels to Unicode NFC, build the character vocabulary, and create fixed train/validation/test splits plus 10%, 25% and 50% training subsets.
-2. **Train the three models.** The CNN classifies single characters. The CRNN reads a word as a sequence and is trained with CTC loss. The TrOCR-style model fine-tunes a pre-trained Vision Transformer encoder with a Devanagari character decoder.
-3. **Compare them.** Report character error rate (CER) and word error rate (WER) for every model, with greedy, beam-search and lexicon decoding for the CRNN.
-4. **Test low-resource behaviour.** Train the CRNN and TrOCR on 10%, 25%, 50% and 100% of the data and plot CER against training-set size.
-5. **Analyse the errors.** Find which characters, matras and conjuncts are confused, and how error depends on word length.
-6. **Build a demo.** A Gradio app that takes an uploaded image and shows each model's prediction.
+## Results
 
-All models are evaluated with the same metric code so the numbers are directly comparable.
+Filled in when the runs finish (test set, used once). Numbers come from `results/*/metrics.json`.
 
-## Contributions
+| Model | Level | Decoding | CER ↓ | WER ↓ | Accuracy ↑ |
+|---|---|---|---|---|---|
+| A: CNN | Character | argmax | TODO | n/a | TODO |
+| B: CRNN-CTC | Word | greedy | TODO | TODO | TODO |
+| C: TrOCR-style | Word | greedy | TODO | TODO | TODO |
+
+## What each member did
 
 | Member | Work |
 |---|---|
-| **Nikhil** | Project setup and repository; toy and real word dataset pipeline; CRNN-CTC model |
-| **Prabhat** | TrOCR model; data augmentation; exploratory data analysis |
-| **Ravi** | CNN character classifier; results tables and plots; Gradio demo |
-| **Monu** | Error analysis; README; project report and slides |
-
-## Repository layout
-
-Created step by step as the project progresses.
-
-```
-src/         model, data and shared code (common/, crnn/, trocr/, char_cnn/, data_words/)
-configs/     YAML experiment configs
-scripts/     dataset preparation scripts
-notebooks/   data exploration and error analysis
-app/         Gradio demo
-results/     metrics, predictions and plots
-report/      report sections
-```
-
-Datasets and trained checkpoints are not stored in Git. The agreed data formats and APIs are in [CONTRACTS.md](CONTRACTS.md).
+| **Nikhil** | Repository and shared code; IIIT-HW-Dev data preparation; CRNN-CTC model |
+| **Prabhat** | TrOCR-style model |
+| **Ravi** | CNN character classifier; results table; error analysis |
+| **Monu** | README; project report |
 
 ## Getting started
 
@@ -57,9 +40,68 @@ pip install -r requirements.txt
 python -m pytest -q             # all tests should pass
 ```
 
-Run every command from the repository root.
+Run every command from the repository root. Datasets and checkpoints are not stored in Git.
+
+## Data
+
+**IIIT-HW-Dev (words).** Version 1 is a direct download (1.8 GB). The CVIT server limits each connection, so use the parallel downloader (resumable):
+
+```bash
+python scripts/download_iiit.py --out C:/dl_data/IIIT-HW-Hindi_v1.tar.gz
+mkdir C:\dl_data\iiit_hw_dev
+tar -xzf C:\dl_data\IIIT-HW-Hindi_v1.tar.gz -C C:\dl_data\iiit_hw_dev
+tar -xzf C:\dl_data\iiit_hw_dev\HindiSeg.tar.gz -C C:\dl_data\iiit_hw_dev     # the images are in a second archive
+mklink /J data\raw\iiit_hw_dev C:\dl_data\iiit_hw_dev      # keep the images outside OneDrive
+```
+
+`scripts/prepare_iiit.py` turns the raw files into `data/processed/words/{train,val,test}.csv`, `vocab.txt` and `stats.json` (the formats of [CONTRACTS.md](CONTRACTS.md)). **These files are already committed**, so you only need the images in `data/raw/iiit_hw_dev/`. Re-running the script takes about 9 minutes (it opens all 95,430 images).
+
+**DHCD (characters).** Download from the [UCI page](https://archive.ics.uci.edu/dataset/389) into `data/raw/dhcd/` (folders `Train/` and `Test/`).
+
+## Train and evaluate
+
+```bash
+# CRNN-CTC (Model B)
+python -m src.crnn.train --config configs/crnn/overfit.yaml     # sanity check: memorise 100 images
+python -m src.crnn.train --config configs/crnn/full.yaml        # full run, stops at its time budget
+python -m src.crnn.train --config configs/crnn/full.yaml --resume   # continue after a disconnect
+python -m src.crnn.evaluate --ckpt checkpoints/crnn_full/best.pt    # test set, written to results/
+
+# Models A and C follow the same pattern (in progress):
+#   python -m src.char_cnn.train --config configs/char_cnn/cnn.yaml
+#   python -m src.trocr.train    --config configs/trocr/full.yaml
+```
+
+There is no GPU requirement for the tests, but training needs one. See [docs/KAGGLE.md](docs/KAGGLE.md) for running on a free Kaggle GPU.
+
+## Repository layout
+
+```
+src/common/   shared metrics (CER/WER/accuracy), results writer, seed
+src/crnn/     Model B: data loader, model, greedy decoding, training, evaluation
+src/char_cnn/ Model A (CNN character classifier)
+src/trocr/    Model C (TrOCR-style)
+configs/      YAML experiment configs
+scripts/      data download and preparation
+results/      metrics and predictions of each run
+report/       report sections
+docs/         Kaggle guide
+tests/        unit tests
+```
+
+The agreed data formats and prediction API are in [CONTRACTS.md](CONTRACTS.md); how we work is in [CONTRIBUTING.md](CONTRIBUTING.md); the report is assembled from [report/](report/README.md).
+
+## Reproducibility
+
+- Seed 42 everywhere (`src/common/seed.py`).
+- Labels are Unicode NFC; the character list is built from the training split only.
+- The test split is evaluated once, after training; the validation split is used for every choice.
+- Every run writes `results/<run_name>/test_predictions.csv` and `metrics.json` through `src/common/io.py`.
 
 ## References
 
-1. Shi, Bai, Yao. *An End-to-End Trainable Neural Network for Image-based Sequence Recognition (CRNN)*, TPAMI 2017. https://arxiv.org/abs/1507.05717
+1. Shi, Bai, Yao. *An End-to-End Trainable Neural Network for Image-based Sequence Recognition and Its Application to Scene Text Recognition (CRNN)*, TPAMI 2017. https://arxiv.org/abs/1507.05717
 2. Li et al. *TrOCR: Transformer-based Optical Character Recognition with Pre-trained Models*, AAAI 2023. https://arxiv.org/abs/2109.10282
+3. Dutta, Krishnan, Mathew, Jawahar. *Offline Handwriting Recognition on Devanagari using a new Benchmark Dataset*, DAS 2018 (IIIT-HW-Dev).
+
+The full list is in [report/references.md](report/references.md). DHCD is licensed CC BY 4.0.

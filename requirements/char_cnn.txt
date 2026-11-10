@@ -1,4 +1,3 @@
-# Owner: Ravi (character CNN, results summary, demo)
+# Owner: Ravi (character CNN, results table, error analysis)
 scikit-learn
 seaborn
-gradio
