@@ -1,0 +1,20 @@
+# Normalise line endings so Windows / Linux (Kaggle, Colab) teammates don't create noisy diffs
+* text=auto
+
+*.py      text eol=lf
+*.md      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.txt     text eol=lf
+*.csv     text eol=lf
+*.ipynb   text eol=lf
+*.sh      text eol=lf
+*.ps1     text eol=crlf
+
+# Binary files
+*.pdf     binary
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.ttf     binary
+*.otf     binary
