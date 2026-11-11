@@ -1,0 +1,29 @@
+# Full TrOCR-style run on the real IIIT-HW-Dev data (Kaggle GPU).
+# python -m src.trocr.train --config configs/trocr/full.yaml          (--resume after a disconnect)
+# Time budget about 3 to 3.5 h. Measure the first epoch, then set `epochs` so that the whole run fits:
+# the learning rate only decays fully if the run reaches its last epoch. If one epoch is too slow,
+# set train_limit (for example 30000 random training images) and report it as a limited-budget result.
+approach: finetune             # finetune = pre-trained decoder with a character vocabulary
+pretrained: microsoft/trocr-small-handwritten
+data_dir: data/processed/words
+train_csv: train.csv
+val_csv: val.csv
+image_root: .                  # image_path in the CSVs is relative to the repo root
+train_limit: 0                 # 0 = all 69,853 training images
+val_limit: 1500                # random subset of the validation split per epoch (faster); test is always full
+batch_size: 16
+grad_accum: 2                  # effective batch 32
+epochs: 5
+lr_pretrained: 5.0e-05
+lr_new: 3.0e-04
+weight_decay: 0.01
+warmup_steps: 300
+grad_clip: 1.0
+max_length: 32                 # longest label is 23 characters
+freeze_encoder_epochs: 0
+patience: 3
+max_minutes: 190               # time budget: stops cleanly and keeps best.pt
+num_workers: 2
+seed: 42
+ckpt_dir: checkpoints/trocr_full
+run_name: trocr_full
