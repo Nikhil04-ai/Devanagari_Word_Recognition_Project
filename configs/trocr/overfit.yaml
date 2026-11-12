@@ -1,0 +1,26 @@
+# Sanity check: the model must memorise 100 training images (CER -> 0) before any full run.
+# python -m src.trocr.train --config configs/trocr/overfit.yaml
+# Stops by itself as soon as val CER (on the same 100 images) is 0. If it never gets there, check the
+# start / end / padding token ids (pad = 0, bos = 1, eos = 2) and that padded labels are -100.
+approach: finetune
+pretrained: microsoft/trocr-small-handwritten
+data_dir: data/processed/words
+train_csv: train.csv
+val_csv: val.csv
+image_root: .
+overfit_n: 100
+batch_size: 10
+grad_accum: 1
+epochs: 100                    # 1,000 updates
+lr_pretrained: 5.0e-05
+lr_new: 3.0e-04
+weight_decay: 0.0
+warmup_steps: 20
+grad_clip: 1.0
+max_length: 32
+patience: 1000
+max_minutes: 30
+num_workers: 0
+seed: 42
+ckpt_dir: checkpoints/trocr_overfit
+run_name: trocr_overfit
