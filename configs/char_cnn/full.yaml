@@ -1,0 +1,16 @@
+# Full character-CNN run on DHCD (Kaggle GPU, or laptop CPU: about 7 min per epoch).
+# python -m src.char_cnn.train --config configs/char_cnn/full.yaml
+data_dir: data/raw/dhcd    # put the UCI DHCD zip here (or unzip it here)
+val_fraction: 0.1          # 10 % of Train, stratified, seed 42
+epochs: 15                 # 15 is enough: val accuracy is ~97.5 % after epoch 1
+batch_size: 128
+lr: 0.001
+weight_decay: 0.0001
+label_smoothing: 0.1
+dropout: 0.4
+augment: true              # rotation / shift / scale / shear, never a flip
+seed: 42
+patience: 8
+max_minutes: 150           # time budget (CPU: ~7 min/epoch; Kaggle GPU: well under 1 min/epoch)
+ckpt_dir: checkpoints/char_cnn_full
+run_name: char_cnn_full
