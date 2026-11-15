@@ -1,0 +1,15 @@
+# Sanity check: the CNN must memorise 100 training images (accuracy -> 1.0) before the full run.
+# python -m src.char_cnn.train --config configs/char_cnn/overfit.yaml
+data_dir: data/raw/dhcd
+overfit_n: 100
+epochs: 200
+batch_size: 20
+lr: 0.001
+weight_decay: 0.0
+label_smoothing: 0.0
+dropout: 0.0
+augment: false
+patience: 1000
+max_minutes: 10
+ckpt_dir: checkpoints/char_cnn_overfit
+run_name: char_cnn_overfit
