@@ -1,0 +1,17 @@
+{
+  "run_name": "char_cnn_full_argmax",
+  "num_samples": 13800,
+  "cer": 0.003012820512820513,
+  "wer": 0.002826086956521739,
+  "accuracy": 0.9971739130434782,
+  "model": "char_cnn",
+  "train_subset": "full",
+  "decoding": "argmax",
+  "params": 1184462,
+  "train_time_min": 1.47,
+  "ms_per_image": 0.989,
+  "macro_f1": 0.9971744871203413,
+  "best_epoch": 14,
+  "val_accuracy": 0.9970588088035583,
+  "note": "accuracy is the main metric; cer/wer are over Unicode code points of the single character (क्ष, त्र, ज्ञ have 3 code points), so cer is not exactly 1 - accuracy"
+}

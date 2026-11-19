@@ -187,7 +187,7 @@ def main():
     ax.bar_label(b2, labels=[f"{w:.1f}" if w else "" for w in wers], fontsize=8)
     ax.set_xticks(list(xs), names, rotation=15, fontsize=8)
     ax.set_ylabel("error on the test set (%)")
-    ax.set_title("Test error per run (character CNN and word models measure different tasks)", fontsize=9)
+    ax.set_title("Test error per run\n(the character CNN and the word models measure different tasks)", fontsize=9)
     ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "results_chart.png"), dpi=150)
