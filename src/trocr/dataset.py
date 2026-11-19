@@ -32,6 +32,11 @@ class TrOCRWordDataset(Dataset):
         self.paths = df["image_path"].tolist()
         self.texts = df["text"].tolist()
         self.tok, self.proc, self.max_length, self.root = tokenizer, image_processor, max_length, root
+        if self.paths and not os.path.exists(os.path.join(root, self.paths[0])):
+            raise FileNotFoundError(
+                f"first image not found: {os.path.join(root, self.paths[0])}. "
+                "The CSV paths are relative to the repository root (for example data/raw/iiit_hw_dev/HindiSeg/...). "
+                "Run from the repo root, extract the images to data/raw/iiit_hw_dev/, or pass --image_root.")
 
     def __len__(self):
         return len(self.paths)

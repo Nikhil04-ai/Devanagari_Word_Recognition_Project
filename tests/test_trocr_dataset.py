@@ -41,3 +41,12 @@ def test_first_n_and_random_n(tmp_path):
     assert len(TrOCRWordDataset(csv, first_n=4, **kw)) == 4
     a, b = (TrOCRWordDataset(csv, random_n=5, seed=42, **kw) for _ in range(2))
     assert len(a) == 5 and a.paths == b.paths  # seeded, reproducible
+
+
+def test_missing_images_give_a_clear_error(tmp_path):
+    import pytest
+
+    csv = tmp_path / "t.csv"
+    pd.DataFrame([("data/raw/nowhere/1.jpg", "क")], columns=["image_path", "text"]).to_csv(csv, index=False, encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="first image not found"):
+        TrOCRWordDataset(csv, CharTokenizer(list("क")), DummyProc(), root=str(tmp_path))
