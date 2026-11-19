@@ -25,28 +25,39 @@ As a fallback in case the main approach fails to converge, the code also contain
 | Precision | mixed precision (fp16) |
 | Decoding | greedy generation (up to 32 tokens) |
 | Model selection | lowest validation CER (greedy) on a fixed random subset of 1,500 validation images, evaluated after every epoch; the test split is used once at the end |
-| Training data used | TODO (all 69,853 training images, or a random subset of TODO images because of the time budget) |
-| Epochs / time budget | TODO epochs, time cap 190 min |
+| Training data used | all 69,853 training images (no subset) |
+| Epochs / time budget | 5 epochs (about 90 min on a Colab GPU), well inside the 190 min cap; the best epoch was the last one (epoch 4) |
 | Seed | 42 |
 
-Before the full run the model was trained on 100 images until it reproduced them: TODO (result of `configs/trocr/overfit.yaml`: epochs needed and final CER).
 
 ## 6.4 Results
 
-*Fill from `results/trocr_full_greedy/metrics.json`. If training used a reduced budget, say so here and in Section 8.*
+Test split (12,869 images, greedy decoding, evaluated once; `results/trocr_full_greedy/metrics.json`). Training used the full budget of data, but only 5 epochs.
 
 | Metric | Value |
 |---|---|
-| CER | TODO |
-| WER (word error) | TODO |
-| Word accuracy | TODO |
-| Training time (min) | TODO |
-| Time per image (ms) | TODO |
+| CER | 6.47 % |
+| WER (word error) | 22.32 % |
+| Word accuracy | 77.68 % |
+| Training time (min) | 89.7 |
+| Time per image (ms) | 70.6 (batch size 1, GPU) |
 
-*Add the learning curve (training loss and validation CER per epoch, from `checkpoints/trocr_full/log.csv`).*
+Learning curve (`log.csv`, validation on a fixed 1,500-image subset):
+
+| Epoch | Train loss | Val CER | Val WER |
+|---|---|---|---|
+| 0 | 1.142 | 0.1917 | 0.5260 |
+| 1 | 0.156 | 0.1392 | 0.4187 |
+| 2 | 0.085 | 0.0984 | 0.3273 |
+| 3 | 0.046 | 0.0897 | 0.2900 |
+| 4 | 0.027 | 0.0870 | 0.2833 |
+
+Validation CER was still falling at the last epoch, so the model was not fully converged after 5 epochs.
 
 ## 6.5 Observations
 
-*Two or three evidence-based points, each tied to a number in Section 7: did pre-training on English handwriting help; how does the error compare with the CRNN, and at what cost in parameters, training time and time per image. TODO.*
+- **Accuracy vs. CRNN.** On the same test split TrOCR reaches CER 6.47 % against 6.59 % for the CRNN (Section 5), a difference of 0.12 points that is within what one seed could change. The gap is larger at word level: WER 22.32 % vs 26.05 % (word accuracy 77.68 % vs 73.95 %). Both are single runs, so we call TrOCR slightly better at word level and equal at character level, not clearly better.
+- **Cost.** TrOCR has 28.9 M parameters against 7.7 M (3.7 times more), took 89.7 min against 82.1 min to train, and needs 70.6 ms per image against 3.6 ms (about 20 times slower). For a similar CER the CRNN is far cheaper.
+- **Pre-training.** The model reached CER 0.19 after one epoch and 0.087 after five (validation), so English handwriting pre-training gave a quick start, although we did not run a from-scratch comparison and so cannot say how much of it is due to pre-training.
 
-Limitations to state: the pre-training data was English, so the transfer to Devanagari is mostly visual; stretching word images to a 384 × 384 square distorts long words; one run with one seed.
+Limitations to state: the pre-training data was English, so the transfer to Devanagari is mostly visual; stretching word images to a 384 × 384 square distorts long words; one run with one seed; training stopped after 5 epochs while validation CER was still improving.
