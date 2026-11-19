@@ -6,6 +6,7 @@
 |---|---|---|---|---|---|---|
 | char_cnn_full_argmax | char_cnn | character | 0.30 % | n/a | 99.72 % | 13800 |
 | crnn_full_greedy | crnn | word | 6.59 % | 26.05 % | 73.95 % | 12869 |
+| trocr_full_greedy | trocr | word | 6.47 % | 22.32 % | 77.68 % | 12869 |
 
 The CNN reads one isolated consonant or digit; the word models read whole words with vowel signs and conjuncts. The numbers measure different tasks and are not directly comparable.
 
@@ -71,4 +72,52 @@ The CNN reads one isolated consonant or digit; the word models read whole words 
 | 6-7 | 3924 | 6.52 % |
 | 8-10 | 2292 | 6.80 % |
 | 11+ | 524 | 6.96 % |
+
+## trocr_full_greedy
+
+4,992 character errors on 12,869 test words (2,873 words wrong).
+
+### Errors by type of the true character
+
+| Character type | Share of test characters | Substitutions | Deletions | Insertions | Share of all errors |
+|---|---|---|---|---|---|
+| consonant | 56.39 % | 1764 | 203 | 642 | 52.26 % |
+| vowel sign (matra) | 27.25 % | 443 | 193 | 186 | 16.47 % |
+| halant (conjuncts) | 6.41 % | 54 | 186 | 467 | 14.16 % |
+| anusvara / chandrabindu / visarga | 4.00 % | 90 | 104 | 111 | 6.11 % |
+| independent vowel | 3.47 % | 180 | 14 | 30 | 4.49 % |
+| punctuation (danda, hyphen) | 1.15 % | 15 | 131 | 2 | 2.96 % |
+| nukta | 1.14 % | 17 | 80 | 49 | 2.92 % |
+| digit | 0.15 % | 13 | 2 | 1 | 0.32 % |
+| other | 0.04 % | 10 | 5 | 0 | 0.30 % |
+
+### Top 15 character substitutions (true → predicted)
+
+| True | Predicted | Count |
+|---|---|---|
+| य | स | 93 |
+| त | न | 92 |
+| ध | घ | 63 |
+| ं | ँ | 49 |
+| ू | ु | 49 |
+| म | ग | 43 |
+| व | त | 39 |
+| य | म | 38 |
+| ु | ू | 32 |
+| े | ो | 28 |
+| य | थ | 28 |
+| र | श | 28 |
+| ब | व | 27 |
+| ट | द | 27 |
+| त | ल | 27 |
+
+### CER by word length (code points)
+
+| Length | Test words | CER |
+|---|---|---|
+| 1-3 | 1218 | 7.60 % |
+| 4-5 | 4911 | 6.09 % |
+| 6-7 | 3924 | 6.18 % |
+| 8-10 | 2292 | 6.47 % |
+| 11+ | 524 | 8.29 % |
 
