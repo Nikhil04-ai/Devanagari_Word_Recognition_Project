@@ -1,0 +1,18 @@
+{
+  "run_name": "trocr_full_greedy",
+  "num_samples": 12869,
+  "cer": 0.0646590246745677,
+  "wer": 0.22324966974900926,
+  "accuracy": 0.7767503302509907,
+  "model": "trocr",
+  "train_subset": "full",
+  "decoding": "greedy",
+  "params": 28859392,
+  "train_time_min": 89.74,
+  "ms_per_image": 70.641,
+  "best_epoch": 4,
+  "n_test_seen_words": 12869,
+  "n_test_unseen_words": 0,
+  "cer_seen_words": 0.0646590246745677,
+  "cer_unseen_words": null
+}
