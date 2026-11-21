@@ -93,7 +93,7 @@ python scripts/make_results_table.py           # Markdown table of every results
 python results/summary/error_analysis.py       # confusions, error types, CER by word length
 python report/tools/word_frequency.py          # report Section 7.4: test error by word frequency in training
 python report/tools/build_report.py            # merge report/sections/ into report/build/report_draft.pdf
-python report/tools/build_report.py --final    # the submission PDF, refused while any TODO is left
+python report/tools/build_report.py --final    # report/P09_report.pdf (not added to Git)
 ```
 
 The PDF is printed with Microsoft Edge (or Chrome), which shows Hindi text correctly. See [report/README.md](report/README.md).

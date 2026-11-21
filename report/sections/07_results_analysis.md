@@ -1,7 +1,5 @@
 # 7. Results and analysis
 
-*All numbers come from `results/*/metrics.json`, `results/*/test_predictions.csv` and `results/summary/error_analysis.md`.*
-
 ## 7.1 Main comparison
 
 All models are evaluated on their own test set, once, with the shared metric code. CER is the edit distance over Unicode code points divided by the number of reference characters; WER is the share of words that are not exactly right.
@@ -26,7 +24,7 @@ At character level the two word models are equal: CER 6.47 % for TrOCR against 6
 
 TrOCR pays for this. It has 28.9 M parameters against 7.7 M (3.7 times more), trained for about 90 min against 82 min, and needs 70.6 ms per image against 3.6 ms (about 20 times slower). Both models were trained on all 69,853 training words, but under different budgets: the CRNN for 25 epochs and TrOCR for 5, and TrOCR's validation CER was still falling at its last epoch (Section 6.4). Each result is a single run with one seed, so the 0.12-point CER difference is within what a different seed could change; we only claim that TrOCR is slightly better at word level.
 
-For context, the CNN-RNN baseline of the dataset's authors, trained only on IIIT-HW-Dev, reported 17.56 % CER and 45.72 % WER, and 8.64 % CER and 26.22 % WER after pre-training on synthetic Devanagari and English handwriting [3]. Both of our word models are below these numbers without synthetic data. They are not directly comparable, because that work used the original release of the dataset, before its segmentation errors were corrected, and a fixed input size of 96 × 256 pixels [3]; they do show that both of our models are strong baselines on the corrected data.
+For context, the CNN-RNN baseline of the dataset's authors, trained only on IIIT-HW-Dev, reported 17.56 % CER and 45.72 % WER, and 8.64 % CER and 26.22 % WER after pre-training on synthetic Devanagari and English handwriting [3]. Both of our word models are below these numbers without synthetic data, but the numbers are not directly comparable: that work used the original release of the dataset, before its segmentation errors were corrected [3].
 
 ## 7.4 Word frequency
 
@@ -40,7 +38,7 @@ Every test word occurs in the training split and the test writers are new, so th
 
 *Source: `python report/tools/word_frequency.py`, which uses the shared metric code.*
 
-The CER differs by less than 2 points across the groups and has no clear trend, apart from the lowest value in the 125-image group, which is too small to draw conclusions from. With this split we cannot say how the models behave on words they have never seen.
+The CER differs by less than 2 points across the groups and has no clear trend; the lowest value is in the 125-image group, which is too small to draw conclusions from.
 
 ## 7.5 Error analysis
 
@@ -85,19 +83,8 @@ Conjunct handling is the hardest for both models (the halant is wrong 11.5 % and
 
 The CRNN's CER is almost flat across lengths (6.30 to 7.10 %). TrOCR is better than the CRNN for words of 4 to 10 characters, but worse for the shortest words (1 to 3) and for the longest (11 or more, 8.29 %). The longest words are the ones most distorted when resized to a square input (Section 6.5), which may be one reason, but we did not test it.
 
-**Examples.** Failure cases from the test split (the image path is `data/raw/iiit_hw_dev/HindiSeg/test/...`). The explanations describe what differs, not why the model chose it.
-
-| Image | Truth | CRNN | TrOCR | What went wrong |
-|---|---|---|---|---|
-| `11/11/12.jpg` | पत्ते | पन्ने | पत्ने | त read as न (the most frequent confusion); TrOCR gets the first half of the conjunct (त्) right |
-| `11/29/14.jpg` | नंबर | नबर | नबर | both drop the anusvara |
-| `6/64/42.jpg` | आंध्र | आंध | आंघ्र | CRNN loses the final conjunct; TrOCR reads ध as घ |
-| `6/49/20.jpg` | रिवाज़ | रिवाज | रिवाज | both drop the nukta |
-| `6/130/28.jpg` | खुला। | खुला | खुला | both drop the final danda |
-| `9/97/35.jpg` | भुट्टे | भुंट्टे | भुट्ट | CRNN inserts an anusvara; TrOCR drops the last vowel sign |
-
-Small marks (anusvara, nukta, danda) are the ones most often missing in both models; the nukta and the punctuation together account for 5.3 % (CRNN) and 5.9 % (TrOCR) of all errors.
+**Examples.** Three failure cases from the test split show the typical errors: पत्ते is read as पन्ने by the CRNN and पत्ने by TrOCR (त read as न, the most frequent confusion); नंबर is read as नबर by both (the anusvara is dropped); and रिवाज़ is read as रिवाज by both (the nukta is dropped). Small marks (anusvara, nukta, danda) are the ones most often missing in both models; the nukta and the punctuation together account for 5.3 % (CRNN) and 5.9 % (TrOCR) of all errors.
 
 ## 7.6 Low-resource discussion
 
-The training set is small and covers only 7 writers, and the test words all occur in training, so the vocabulary is limited and the main difficulty is the handwriting of new writers. In this setting a model pre-trained on English handwriting (Model C) reached the same CER as the CRNN trained from scratch and a 3.7-point lower WER, at about 4 times the parameters and 20 times the prediction time. We did not train TrOCR from scratch, so we cannot say how much of its result is due to pre-training, and with one run each we cannot say that the CER difference is real.
+With only 7 training writers and a closed vocabulary, the main difficulty is the handwriting of new writers. Here a model pre-trained on English handwriting (Model C) matched the CER of the CRNN trained from scratch and had a 3.7-point lower WER; without a from-scratch TrOCR run we cannot say how much of this is due to pre-training.
