@@ -1,10 +1,8 @@
 # 3. Datasets and preprocessing
 
-*Owner: Nikhil. All numbers are produced by `scripts/prepare_iiit.py` (see `data/processed/words/stats.json`).*
-
 ## 3.1 Character dataset: DHCD
 
-Model A uses the Devanagari Handwritten Character Dataset (DHCD) from the UCI Machine Learning Repository [4]. It has 92,000 grayscale images of 32×32 pixels in 46 classes (36 consonants and 10 digits) with 2,000 images per class. The character is centred in a 28×28 region with 2 pixels of padding on every side. The data is split 85/15 into training and test images (78,200 and 13,800, that is 1,700 and 300 per class; *these counts come from papers that use DHCD: confirm them after downloading*). DHCD contains **no vowels and no vowel signs (matras)**, and every image shows one isolated character. The dataset is licensed CC BY 4.0.
+Model A uses the Devanagari Handwritten Character Dataset (DHCD) from the UCI Machine Learning Repository [4]. It has 92,000 grayscale images of 32×32 pixels in 46 classes (36 consonants and 10 digits) with 2,000 images per class. The character is centred in a 28×28 region with 2 pixels of padding on every side. The data is split 85/15 into training and test images (78,200 and 13,800, that is 1,700 and 300 per class). DHCD contains **no vowels and no vowel signs (matras)**, and every image shows one isolated character. The dataset is licensed CC BY 4.0.
 
 ## 3.2 Word dataset: IIIT-HW-Dev
 
@@ -22,8 +20,6 @@ Models B and C use IIIT-HW-Dev [3], released by CVIT, IIIT Hyderabad: more than 
 
 *Source: `data/processed/words/stats.json`, written by `scripts/prepare_iiit.py`.*
 
-We use the official splits shipped with the dataset.
-
 ## 3.3 Preprocessing
 
 - **Unicode normalisation.** Every label is normalised to NFC. A Devanagari word can be stored as different code-point sequences, which would make a correct answer look wrong. About 2.5 % of the labels in every split are not in NFC form (1,841 of 69,853 in training), so normalisation changes real labels, and it merges some spellings of the same word.
@@ -33,12 +29,8 @@ We use the official splits shipped with the dataset.
 
 ## 3.4 A low-resource problem
 
-Compared with English, Devanagari has very little public labelled handwriting data. The word dataset has about 95K images but a vocabulary of only about 11K entries, so the models see each word several times and meet few new words. The whole dataset comes from only 12 writers (7 for training, 2 for validation, 3 for testing), so the variety of handwriting is limited. Writing styles still vary, the headline joins letters, vowel signs attach on all sides of a consonant, and half-letters form conjuncts, so segmenting characters is hard.
+The word dataset has about 95K images but a vocabulary of only about 11K entries, so the models see each word several times and meet few new words, and it comes from only 12 writers (7 for training, 2 for validation, 3 for testing), so the variety of handwriting is limited (see also Section 1).
 
 ## 3.5 Test words and test writers
 
-Every word in the validation and test splits also occurs in the training split (100 %), and no writer is shared between splits. The test therefore measures **generalisation to new writers, not to new words**: a model can partly memorise the 9,495 training words. We cannot report error rates for unseen words; instead we report error by how often a word occurs in training (Section 7.4).
-
-## 3.6 Comparability of the two datasets
-
-DHCD contains isolated consonants and digits; IIIT-HW-Dev contains whole words with vowel signs and conjuncts. An error rate on one is not comparable with an error rate on the other (see Section 7).
+Every word in the validation and test splits also occurs in the training split (100 %), and no writer is shared between splits. The test therefore measures **generalisation to new writers, not to new words**: a model can partly memorise the 9,495 training words. We cannot report error rates for unseen words; instead we report error by how often a word occurs in training (Section 7.4). An error rate on DHCD (isolated characters) is not comparable with one on IIIT-HW-Dev (whole words); see Section 7.2.

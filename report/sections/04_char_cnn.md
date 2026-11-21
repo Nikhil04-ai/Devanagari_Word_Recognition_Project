@@ -18,7 +18,7 @@ The CNN classifies one 32×32 grayscale image of a handwritten Devanagari conson
 | Training time | 1.5 min for 15 epochs on a Colab T4 GPU (about 6 s per epoch) |
 | Inference | 0.99 ms per image (T4, batch size 1) |
 
-Before the full run, the model memorised 100 training images (accuracy 1.0 after 8 epochs, no augmentation or regularisation). This sanity check shows that the data loading, labels and training loop are correct. All images are kept in memory as one array, which is about 70 MB. The data loader reads the UCI zip file directly and caches the decoded images.
+Before the full run, the model memorised 100 training images (accuracy 1.0 after 8 epochs, no augmentation or regularisation). This sanity check shows that the data loading, labels and training loop are correct.
 
 ## 4.3 Results
 
@@ -33,11 +33,7 @@ The numbers come from `results/char_cnn_full_argmax/metrics.json`.
 
 The shared metric code computes CER over Unicode code points. The conjuncts क्ष, त्र and ज्ञ are three code points each, so the reported CER (0.30 %) differs slightly from 1 − accuracy. For this model, accuracy is the main number.
 
-![Character CNN learning curve](../figures/04_char_cnn_learning_curve.png)
-
-*Figure: training and validation loss (left) and accuracy (right) per epoch. The training numbers are measured on augmented images. The training loss stays near 0.72 because label smoothing does not let it fall to zero; the validation loss is computed without smoothing.*
-
-Validation accuracy is already 97.5 % after the first epoch and above 99 % from epoch 7. It still rises slowly until the end of the cosine schedule. Training and validation accuracy stay close, so the model does not overfit noticeably.
+Validation accuracy is already 97.5 % after the first epoch and above 99 % from epoch 7. It still rises slowly until the end of the cosine schedule. Training and validation accuracy stay close, so the model does not overfit noticeably. The training loss (on augmented images) stays near 0.72 because label smoothing does not let it fall to zero.
 
 **Most confused pairs on the test set** (out of 300 test images per class):
 
@@ -50,15 +46,11 @@ Validation accuracy is already 97.5 % after the first epoch and above 99 % from 
 | ब | व | 2 |
 | च, ट, छ, य, ज्ञ | य, ठ, द, म, श | 1 each |
 
-![Most confused character pairs](../figures/04_char_cnn_confused_pairs.png)
-
-*Figure: test images of the most confused (true → predicted) pairs, labelled with the romanised class names of the dataset.*
-
 ## 4.4 Observations
 
-1. **The remaining errors are mostly look-alike letters.** The five most frequent pairs (ध/घ, द/ढ in both directions, त्र/ब, ब/व) cause 16 of the 39 errors. Within each pair, the two letters differ only in a small stroke or loop; for example, ब has a diagonal stroke inside the bowl and व does not. The example images show that some of these samples are ambiguous even for a human reader.
+1. **The remaining errors are mostly look-alike letters.** The five most frequent pairs (ध/घ, द/ढ in both directions, त्र/ब, ब/व) cause 16 of the 39 errors. Within each pair, the two letters differ only in a small stroke or loop; for example, ब has a diagonal stroke inside the bowl and व does not.
 2. **Most classes are almost solved.** 17 of the 46 classes have no error at all, and no digit appears among the confused pairs. The weakest class is द, with an F1 of 98.7 %.
-3. **The word model has the same difficulty.** ध→घ (46 times) and ब→व (38 times) are also among the most frequent character substitutions of the CRNN on whole words (`results/summary/error_analysis.md`). The look-alike shapes are hard for both models, but in words they are much more frequent and come together with vowel signs and conjuncts.
+3. **The word models have the same difficulty** with look-alike shapes such as ध/घ (Section 7.5).
 
 ## 4.5 What this result does not show
 

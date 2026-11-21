@@ -2,17 +2,17 @@
 
 Usage (from the repository root):
     python report/tools/build_report.py            # draft -> report/build/report_draft.pdf (not in Git)
-    python report/tools/build_report.py --final    # -> report/Devanagari_Word_Recognition_Report.pdf,
-                                                   #    refused while any TODO is left
+    python report/tools/build_report.py --final    # -> report/P09_report.pdf (do not add it to Git),
+                                                   #    refused while any placeholder is left
 
 What it does:
-1. Joins report/sections/01..09 in order, adds a title block and the numbered reference list
-   (from report/references.md, without its "Status" column).
-2. Drops the "*Owner: ...*" helper lines (they are notes to the writers, not report text).
+1. Joins report/sections/01..08 in order, then the numbered reference list (from
+   report/references.md), then the contribution statement (09), under a title block.
+2. Drops any "*Owner: ...*" helper lines (notes to the writers, not report text).
 3. Converts Markdown to HTML (python-markdown, tables) and prints it to PDF with Microsoft Edge
    (headless), which shapes Devanagari correctly with the Windows "Nirmala UI" font.
 4. Prints the page count and file size (limit 10 MB, target 6 to 8 pages) and lists every line that
-   still contains TODO, "(check)" or an italic writer's note, with its file and line number.
+   still contains a placeholder, "(check)" or an italic writer's note, with its file and line number.
 
 Needs: pip install markdown pypdf (in requirements/analysis.txt), and Microsoft Edge or Google Chrome.
 """
@@ -29,7 +29,7 @@ import markdown
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 REPORT = os.path.join(ROOT, "report")
 BUILD = os.path.join(REPORT, "build")
-FINAL_PDF = os.path.join(REPORT, "Devanagari_Word_Recognition_Report.pdf")
+FINAL_PDF = os.path.join(REPORT, "P09_report.pdf")
 MAX_MB = 10.0
 
 TITLE = "Handwritten Devanagari Word Recognition: CRNN-CTC vs Transformer OCR (P09)"
@@ -43,29 +43,43 @@ BROWSERS = [
 ]
 
 CSS = """
-@page { size: A4; margin: 14mm 15mm 14mm 15mm; }
+@page { size: A4; margin: 12mm 13mm 12mm 13mm; }
 body { font-family: "Segoe UI", "Nirmala UI", "Noto Sans Devanagari", Arial, sans-serif;
-       font-size: 9.5pt; line-height: 1.32; color: #111; text-align: justify; }
+       font-size: 9pt; line-height: 1.2; color: #111; text-align: justify; }
 h1.title { font-size: 17pt; margin: 0 0 2px 0; text-align: center; }
 p.team { text-align: center; margin: 0 0 14px 0; color: #333; }
-h1 { font-size: 13pt; margin: 14px 0 4px 0; border-bottom: 1px solid #999; padding-bottom: 2px; }
+h1 { font-size: 12.5pt; margin: 10px 0 3px 0; border-bottom: 1px solid #999; padding-bottom: 2px; }
 h2 { font-size: 11pt; margin: 10px 0 3px 0; }
 p, ul, ol { margin: 3px 0 6px 0; }
 li { margin: 1px 0; }
-table { border-collapse: collapse; margin: 6px 0 8px 0; font-size: 8.8pt; page-break-inside: avoid; }
+table { border-collapse: collapse; margin: 6px 0 8px 0; font-size: 8.5pt; }
+tr { page-break-inside: avoid; }
 th, td { border: 1px solid #aaa; padding: 2px 6px; vertical-align: top; }
 th { background: #eee; }
-img { max-width: 78%; max-height: 6.2cm; display: block; margin: 6px auto 2px auto; page-break-inside: avoid; }
+img { max-width: 62%; max-height: 4.4cm; display: block; margin: 6px auto 2px auto; page-break-inside: avoid; }
 code { font-family: Consolas, monospace; font-size: 8.8pt; }
-ol.refs { padding-left: 22px; font-size: 9pt; }
-ol.refs li { margin: 2px 0; }
+ol.refs { padding-left: 22px; font-size: 8.3pt; }
+ol.refs li { margin: 1px 0; }
 """
 
-NOTE_RE = re.compile(r"TODO|\(check\)|\*Owner:|\*TODO|^\*[A-Z][^*]*(add|fill|check|delete|confirm)", re.I)
+# The placeholder word is assembled from two halves so that a text search of report/ finds only
+# real placeholders in the report text, not this checker.
+PLACEHOLDER = "TO" + "DO"
+NOTE_RE = re.compile(PLACEHOLDER + r"|\(check\)|\*Owner:|^\*[A-Z][^*]*(add|fill|check|delete|confirm)", re.I)
 
 
 def section_files():
     return sorted(glob.glob(os.path.join(REPORT, "sections", "[0-9][0-9]_*.md")))
+
+
+def main_sections():
+    """Sections 01 to 08, printed before the references."""
+    return [p for p in section_files() if os.path.basename(p)[:2] <= "08"]
+
+
+def after_references():
+    """Sections after 08 (the contribution statement), printed after the references."""
+    return [p for p in section_files() if os.path.basename(p)[:2] > "08"]
 
 
 def strip_helper_notes(text):
@@ -74,12 +88,12 @@ def strip_helper_notes(text):
 
 
 def references_html():
-    """Turn the table in references.md into a numbered list (drop the Status column)."""
+    """Turn the table in references.md into a numbered list."""
     path = os.path.join(REPORT, "references.md")
     items = []
     with open(path, encoding="utf-8") as f:
         for line in f:
-            m = re.match(r"\|\s*\[(\d+)\]\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|\s*$", line)
+            m = re.match(r"\|\s*\[(\d+)\]\s*\|\s*(.+?)\s*\|\s*$", line)
             if m:
                 items.append((int(m.group(1)), m.group(2)))
     lis = "".join(f'<li value="{n}">{markdown.markdown(t)[3:-4]}</li>' for n, t in sorted(items))
@@ -103,10 +117,15 @@ def find_open_items():
 def build_html():
     parts = [f'<h1 class="title">{TITLE}</h1>', f'<p class="team">{TEAM}</p>']
     md = markdown.Markdown(extensions=["tables", "sane_lists"])
-    for path in section_files():
+    def add(path):
         with open(path, encoding="utf-8") as f:
             parts.append(md.reset().convert(strip_helper_notes(f.read())))
+
+    for path in main_sections():
+        add(path)
     parts.append(references_html())
+    for path in after_references():
+        add(path)
     body = "\n".join(parts)
     # Section files reference figures as ../figures/x.png; the HTML lives in report/build/,
     # so the same relative path still points to report/figures/.
@@ -146,7 +165,7 @@ def page_count(pdf_path):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--final", action="store_true", help="write the submission PDF (refused while TODOs remain)")
+    ap.add_argument("--final", action="store_true", help="write the submission PDF (refused while placeholders remain)")
     a = ap.parse_args()
 
     open_items = find_open_items()

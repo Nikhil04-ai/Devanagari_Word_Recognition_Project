@@ -19,8 +19,8 @@ The abstract is at the top of `sections/01_intro.md`.
 
 ## Rules
 
-- **Never invent a number.** Every number comes from `results/*/metrics.json` or from the data scripts. Write `TODO` until it exists, and search the files for `TODO` before merging.
-- Replace the placeholders marked **TODO** and delete the helper notes in *italics*.
+- **Never invent a number.** Every number comes from `results/*/metrics.json` or from the data scripts. If a number does not exist yet, leave it out rather than guess.
+- The report text contains no placeholders or helper notes; keep it that way when editing.
 - Say in the report that the CNN's error (isolated characters) and the word models' error (whole words) are **not directly comparable**.
 - Include a short paragraph on why this is a **low-resource** problem.
 - State that every test word also occurs in training and that the test writers are new, so the test measures generalisation to new writers, not to new words.
@@ -38,13 +38,13 @@ From the repository root (needs Microsoft Edge or Chrome, and `pip install -r re
 
 ```bash
 python report/tools/build_report.py            # draft: report/build/report_draft.pdf (not in Git)
-python report/tools/build_report.py --final    # report/Devanagari_Word_Recognition_Report.pdf
+python report/tools/build_report.py --final    # report/P09_report.pdf
 ```
 
-The script joins the sections in order, drops the `*Owner: ...*` lines, adds the numbered reference list from `references.md` (without its Status column) and prints the PDF with Edge, which shows Hindi correctly. It reports the page count and size, and lists every line that still has a TODO, `(check)` or an italic note. `--final` refuses to run while any is left. Then:
+The script joins sections 01 to 08 in order, then the numbered reference list from `references.md`, then the contribution statement (09), and prints the PDF with Edge, which shows Hindi correctly. It reports the page count and size, and lists every line that still has a placeholder, `(check)` or an italic note. `--final` refuses to run while any is left. Then:
 
 1. Open the PDF: check that every figure is mentioned in the text and Hindi text shows correctly.
 2. Keep it to about 6 to 8 pages and under 10 MB.
-3. The final file `report/Devanagari_Word_Recognition_Report.pdf` is the one file allowed in Git.
+3. Do not add `report/P09_report.pdf` to Git; send it to Nikhil, who submits it.
 
 Section 7.4 comes from `python report/tools/word_frequency.py`, which reads `results/*/test_predictions.csv`.
