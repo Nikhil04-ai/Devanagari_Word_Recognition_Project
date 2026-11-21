@@ -1,2 +1,4 @@
-# Owner: Monu (error analysis)
+# Owner: Monu (report)
 rapidfuzz
+markdown    # report/tools/build_report.py: merge the sections into one PDF
+pypdf       # report/tools/build_report.py: page count of the PDF

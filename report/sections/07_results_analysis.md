@@ -26,6 +26,8 @@ At character level the two word models are equal: CER 6.47 % for TrOCR against 6
 
 TrOCR pays for this. It has 28.9 M parameters against 7.7 M (3.7 times more), trained for about 90 min against 82 min, and needs 70.6 ms per image against 3.6 ms (about 20 times slower). Both models were trained on all 69,853 training words, but under different budgets: the CRNN for 25 epochs and TrOCR for 5, and TrOCR's validation CER was still falling at its last epoch (Section 6.4). Each result is a single run with one seed, so the 0.12-point CER difference is within what a different seed could change; we only claim that TrOCR is slightly better at word level.
 
+For context, the CNN-RNN baseline of the dataset's authors, trained only on IIIT-HW-Dev, reported 17.56 % CER and 45.72 % WER, and 8.64 % CER and 26.22 % WER after pre-training on synthetic Devanagari and English handwriting [3]. Both of our word models are below these numbers without synthetic data. They are not directly comparable, because that work used the original release of the dataset, before its segmentation errors were corrected, and a fixed input size of 96 × 256 pixels [3]; they do show that both of our models are strong baselines on the corrected data.
+
 ## 7.4 Word frequency
 
 Every test word occurs in the training split and the test writers are new, so the test measures generalisation to new writers, not to new words (Section 3.5). To see whether rarer words are harder, we group the test images by how often their word occurs in the training split. Every test word occurs between 5 and 18 times in training, so the groups are narrow and the usual "rare word" case (1 to 4 occurrences) does not exist in this split.
@@ -35,6 +37,8 @@ Every test word occurs in the training split and the test writers are new, so th
 | 5 to 6 | 33.47 % | 6.41 % | 6.49 % |
 | 7 to 9 | 65.56 % | 6.70 % | 6.48 % |
 | 10 or more | 0.97 % (125 images) | 5.02 % | 4.73 % |
+
+*Source: `python report/tools/word_frequency.py`, which uses the shared metric code.*
 
 The CER differs by less than 2 points across the groups and has no clear trend, apart from the lowest value in the 125-image group, which is too small to draw conclusions from. With this split we cannot say how the models behave on words they have never seen.
 
