@@ -20,6 +20,7 @@ import os
 import sys
 import unicodedata
 
+# Make the repository root importable so the shared metric code (src.common) is used, never a copy.
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.common.metrics import accuracy, cer  # noqa: E402
 
