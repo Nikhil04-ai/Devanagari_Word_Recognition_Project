@@ -7,86 +7,141 @@
 Run from the repository root. A checkpoint is written after every epoch (last.pt) and whenever the
 validation CER improves (best.pt). `max_minutes` stops training cleanly when the time budget is used
 up, so a run always ends with a usable best.pt.
+
+Where it fits in the pipeline: config.py -> dataset.py (batches) + model.py (network) -> THIS FILE
+(learning) -> checkpoints/.../best.pt -> evaluate.py (final test score).
+
+What one training step does:
+    1. forward pass with teacher forcing -> loss (cross-entropy over characters)
+    2. backward pass -> gradients (added up over `grad_accum` mini-batches)
+    3. unscale + clip gradients -> AdamW step -> learning-rate scheduler step
+After every epoch the model is scored on the validation set (CER = character error rate,
+WER = word error rate; lower is better) and checkpoints are saved.
 """
+# Standard library: argparse (command line), csv (training log), math (cosine), os (paths), time (time budget).
 import argparse
 import csv
 import math
 import os
 import time
 
+# torch for the model and the optimizer; LambdaLR is a scheduler driven by our own function.
 import torch
 from torch.optim.lr_scheduler import LambdaLR
 
+# Shared project code: the CER / WER metrics and the function that fixes all random seeds.
 from src.common.metrics import cer, wer
 from src.common.seed import set_seed
 
+# Local modules: config, data loaders, and model helpers.
 from .config import load_config, parse_overrides, to_dict
 from .dataset import get_loaders
 from .model import build_model, count_params, generate_ids, new_param_names, set_encoder_trainable
 
 
 def make_optimizer(model, cfg):
-    """AdamW with two parameter groups: new embeddings/head (lr_new) vs pre-trained (lr_pretrained)."""
+    """AdamW with two parameter groups: new embeddings/head (lr_new) vs pre-trained (lr_pretrained).
+
+    Input: model, cfg. Returns: a torch AdamW optimizer.
+    Why two learning rates: the pre-trained weights are already good, so a big step could damage
+    them; the new random weights start from nothing and need a bigger step to learn quickly."""
+    # Names of the randomly initialised (new) parameters; everything else is pre-trained.
     new_names = new_param_names(model, cfg)
     new, old = [], []
     for n, p in model.named_parameters():
         (new if n in new_names else old).append(p)  # frozen params simply get no gradient
+    # Group 0 = pre-trained (small lr), group 1 = new (large lr). The order matters: train.py reads the last group's lr for logging.
     groups = [{"params": old, "lr": cfg.lr_pretrained}, {"params": new, "lr": cfg.lr_new}]
+    # An empty group would raise an error, so it is filtered out.
     return torch.optim.AdamW([g for g in groups if g["params"]], weight_decay=cfg.weight_decay)
 
 
 def make_scheduler(opt, warmup, total):
-    """Linear warm-up, then cosine decay to 0 (steps counted in optimizer updates)."""
+    """Linear warm-up, then cosine decay to 0 (steps counted in optimizer updates).
+
+    Inputs: optimizer, `warmup` = number of warm-up steps, `total` = total optimizer steps of the run.
+    Returns: LambdaLR scheduler. At each step the base lr of every group is multiplied by f(step), a factor in (0, 1].
+    Why warm-up: at the start the new layers are random and gradients are noisy, so a gentle start
+    makes training more stable. Why cosine decay: the lr falls smoothly, so the last steps are small
+    and fine-tune the weights."""
     def f(step):
+        # Warm-up: factor grows linearly from 1/warmup up to 1.
         if step < warmup:
             return (step + 1) / max(1, warmup)
+        # Progress through the decay phase, from 0 to 1 (clamped at 1 so the factor never goes up again).
         prog = (step - warmup) / max(1, total - warmup)
+        # Cosine curve: 1 at prog=0, 0 at prog=1.
         return 0.5 * (1 + math.cos(math.pi * min(1.0, prog)))
     return LambdaLR(opt, f)
 
 
 @torch.no_grad()
 def evaluate_loader(model, loader, tok, cfg, device, amp, num_beams=1, with_loss=True):
-    """Generate text for every batch. Returns a dict: loss, cer, wer, refs, hyps, paths."""
+    """Generate text for every batch. Returns a dict: loss, cer, wer, refs, hyps, paths.
+
+    Inputs: model; loader = DataLoader; tok = tokenizer; cfg; device; amp = use fp16 autocast;
+    num_beams = 1 for greedy decoding, >1 for beam search; with_loss = also compute the teacher-forced loss.
+    Returns: loss (mean over batches), cer, wer, and lists refs (true words), hyps (predicted words), paths.
+    Why greedy by default: it is fast, so it is used for validation after each epoch.
+    @torch.no_grad(): no gradients are needed, which saves memory and time."""
+    # eval() switches dropout off so results are repeatable.
     model.eval()
     refs, hyps, paths, tot_loss, n_batches = [], [], [], 0.0, 0
     for batch in loader:
+        # px: (B, 3, 384, 384) images on the device. non_blocking helps the copy overlap with other work (with pinned memory).
         px = batch["pixel_values"].to(device, non_blocking=True)
+        # Mixed precision: fp16 math on the GPU is faster and uses less memory (enabled only when amp is True).
         with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=amp):
             if with_loss:
+                # Same forward pass as in training (teacher forcing) to get the validation loss.
                 loss = model(pixel_values=px, labels=batch["labels"].to(device)).loss
+                # Skip a batch whose loss is NaN / inf so that one bad batch does not ruin the average.
                 if torch.isfinite(loss):
                     tot_loss += loss.item()
                     n_batches += 1
+            # Real prediction: the model writes the word itself, one character at a time, with no true labels. -> (B, L) ids
             ids = generate_ids(model, px, num_beams=num_beams, max_length=cfg.max_length)
+        # Ids -> text. decode() cuts at <eos> and skips special tokens.
         hyps += [tok.decode(r) for r in ids]
         refs += batch["texts"]
         paths += batch["paths"]
+    # max(n_batches, 1) avoids division by zero when no batch had a finite loss (or with_loss is False).
     return {"loss": tot_loss / max(n_batches, 1), "cer": cer(refs, hyps), "wer": wer(refs, hyps),
             "refs": refs, "hyps": hyps, "paths": paths}
 
 
 def run(cfg, resume=False):
+    """Full training run. Inputs: cfg (config namespace), resume (continue from last.pt if it exists).
+    Returns: dict with best_cer, last_epoch and train_time_min."""
+    # Fix random seeds so that the run can be repeated.
     set_seed(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Mixed precision (fp16) only on a GPU.
     amp = device.type == "cuda"
     os.makedirs(cfg.ckpt_dir, exist_ok=True)
 
     tok, loaders = get_loaders(cfg)
     model = build_model(cfg, tok).to(device)
     opt = make_optimizer(model, cfg)
+    # One optimizer step happens every grad_accum batches, so there are fewer steps than batches.
     steps_per_epoch = math.ceil(len(loaders["train"]) / cfg.grad_accum)
     total_steps = max(steps_per_epoch * cfg.epochs, 1)
+    # Warm-up is at most 10% of all steps, so that a short run still has time to decay the lr.
     sched = make_scheduler(opt, min(cfg.warmup_steps, max(1, total_steps // 10)), total_steps)
+    # GradScaler multiplies the loss by a large number before backward so tiny fp16 gradients do not
+    # become zero (underflow). It does nothing when amp is off.
     scaler = torch.amp.GradScaler("cuda", enabled=amp)
 
+    # State that resume has to restore: next epoch, best val CER so far, epochs without improvement, minutes already used.
     start_epoch, best_cer, bad, minutes_before = 0, float("inf"), 0, 0.0
     last_path = os.path.join(cfg.ckpt_dir, "last.pt")
     if resume and os.path.exists(last_path):
         ck = torch.load(last_path, map_location=device, weights_only=False)
+        # The lr schedule was built for a fixed number of steps, so the setup must be identical.
         if ck["total_steps"] != total_steps:
             raise ValueError("resume needs the same epochs, batch size and data as the original run: the "
                              "learning-rate schedule was built for a different number of steps")
+        # Restore the weights, the optimizer (Adam moments), the scheduler position and the fp16 scaler.
         model.load_state_dict(ck["model"])
         opt.load_state_dict(ck["optimizer"])
         sched.load_state_dict(ck["scheduler"])
@@ -97,64 +152,90 @@ def run(cfg, resume=False):
     print(f"device={device} approach={cfg.approach} train={len(loaders['train'].dataset)} "
           f"val={len(loaders['val'].dataset)} classes={len(tok)} params={count_params(model):,}", flush=True)
     log_path = os.path.join(cfg.ckpt_dir, "log.csv")
+    # A fresh run writes a new log with a header; a resumed run keeps the old log and appends to it.
     if not (resume and os.path.exists(log_path)):
         with open(log_path, "w", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow(["epoch", "train_loss", "val_loss", "val_cer", "val_wer", "lr", "minutes"])
 
     t_start = time.time()
+    # Total training minutes, including the minutes used before a resume.
     minutes = lambda: minutes_before + (time.time() - t_start) / 60  # noqa: E731
     time_up, last_epoch = False, start_epoch - 1
     for epoch in range(start_epoch, cfg.epochs):
+        # Optionally train only the decoder in the first epochs (the encoder is frozen).
         frozen = epoch < cfg.freeze_encoder_epochs
         set_encoder_trainable(model, not frozen)
+        # train() switches dropout on.
         model.train()
         if frozen:
             model.encoder.eval()  # keep the frozen encoder's dropout off
+        # run_loss / n_ok: sum and count of finite batch losses, for the epoch's mean training loss.
         run_loss, n_ok = 0.0, 0
+        # Clear old gradients. set_to_none=True frees the memory instead of filling it with zeros.
         opt.zero_grad(set_to_none=True)
         n_batches = len(loaders["train"])
         for i, batch in enumerate(loaders["train"]):
+            # px (B, 3, 384, 384); labels (B, L) with -100 padding.
             px, labels = batch["pixel_values"].to(device, non_blocking=True), batch["labels"].to(device)
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=amp):
+                # Forward pass with teacher forcing; the model returns the cross-entropy loss (scalar), and -100 labels are ignored.
                 loss = model(pixel_values=px, labels=labels).loss
+            # A NaN / inf loss would poison the weights, so such a batch is skipped.
             if torch.isfinite(loss):
+                # Gradient accumulation: dividing by grad_accum makes the summed gradients of
+                # grad_accum mini-batches equal to their average (a bigger "virtual" batch).
                 scaler.scale(loss / cfg.grad_accum).backward()
                 run_loss, n_ok = run_loss + loss.item(), n_ok + 1
+            # Update the weights every grad_accum batches, and also at the last batch of the epoch so no gradient is left over.
             if (i + 1) % cfg.grad_accum == 0 or i == n_batches - 1:
+                # Undo the fp16 loss scaling first, so the clipping below sees the true gradient size.
                 scaler.unscale_(opt)
+                # Gradient clipping: scale gradients down if their total norm is above grad_clip (guards against exploding gradients).
                 torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
+                # Optimizer step (skipped by the scaler if gradients contain inf / NaN), then update the scale factor.
                 scaler.step(opt)
                 scaler.update()
                 opt.zero_grad(set_to_none=True)
+                # The lr schedule moves one step per optimizer update (not per batch).
                 sched.step()
+            # Time budget: stop this epoch early; the validation and the checkpoint below still run.
             if cfg.max_minutes and minutes() >= cfg.max_minutes:
                 time_up = True
                 break
         train_loss = run_loss / max(n_ok, 1)
 
+        # Score the model on the validation set after every epoch (greedy decoding).
         res = evaluate_loader(model, loaders["val"], tok, cfg, device, amp)
+        # "Best" means lowest validation CER. `bad` counts epochs in a row without improvement (for early stopping).
         improved = res["cer"] < best_cer
         best_cer, bad = (res["cer"], 0) if improved else (best_cer, bad + 1)
+        # Last param group = new layers (lr_new), or the only group if there is just one.
         lr_now = opt.param_groups[-1]["lr"]
         print(f"epoch {epoch:3d} | train loss {train_loss:7.3f} | val loss {res['loss']:7.3f} | "
               f"val CER {res['cer']:.4f} | val WER {res['wer']:.4f} | lr {lr_now:.2e} | {minutes():.1f} min"
               + (" | encoder frozen" if frozen else ""), flush=True)
+        # Show 3 examples so that a person can see what the model writes.
         for r, h in list(zip(res["refs"], res["hyps"]))[:3]:
             print(f"      truth: {r}   predicted: {h}", flush=True)
+        # Append one row to log.csv (used later to plot the training curves).
         with open(log_path, "a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow([epoch, f"{train_loss:.4f}", f"{res['loss']:.4f}", f"{res['cer']:.4f}",
                                     f"{res['wer']:.4f}", f"{lr_now:.3e}", f"{minutes():.2f}"])
 
+        # What a checkpoint holds: weights, tokenizer and config (so evaluate.py can rebuild the model alone), and some info.
         state = {"model": model.state_dict(), "tokenizer": tok.to_dict(), "config": to_dict(cfg), "epoch": epoch,
                  "val_cer": res["cer"], "train_time_min": minutes(),
                  "params": count_params(model, trainable_only=False)}
+        # best.pt = the weights with the lowest validation CER so far (used for the final test).
         if improved:
             torch.save(state, os.path.join(cfg.ckpt_dir, "best.pt"))
+        # last.pt = latest epoch plus optimizer / scheduler / scaler state, so that --resume can continue exactly.
         torch.save({**state, "optimizer": opt.state_dict(), "scheduler": sched.state_dict(),
                     "scaler": scaler.state_dict(), "best_cer": best_cer, "bad_epochs": bad,
                     "total_steps": total_steps}, last_path)
         last_epoch = epoch
 
+        # Stop conditions: overfit test passed, time budget used up, or early stopping (patience).
         if cfg.overfit_n > 0 and res["cer"] == 0.0:
             print("overfit test passed: CER is 0 on the training samples", flush=True)
             break
@@ -175,6 +256,8 @@ def run(cfg, resume=False):
 
 
 def main():
+    """Command-line entry point: read the options, build the config and call run().
+    Each option overrides the same key from the YAML file; `--set KEY=VALUE` can change any other key."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--resume", action="store_true")
@@ -188,6 +271,8 @@ def main():
     ap.add_argument("--num_workers", type=int)
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE", help="override any other config key")
     a = ap.parse_args()
+    # Overrides = the --set pairs, plus every option the user actually gave (None = not given).
+    # --config, --resume and --set are not config keys, so they are left out.
     over = {**parse_overrides(a.set), **{k: v for k, v in vars(a).items()
                                          if k not in ("config", "resume", "set") and v is not None}}
     print(run(load_config(a.config, over), resume=a.resume))
