@@ -1,19 +1,40 @@
 # Sanity check: the model must memorise 100 training images (CER -> 0) before any full run.
 # python -m src.crnn.train --config configs/crnn/overfit.yaml
 # Needs enough updates (about 1,500) and dropout off: 750 updates with dropout 0.3 only reached CER 0.50.
+# Settings below are read by src/crnn/train.py. Keys that are not written here use the DEFAULTS in that file
+# (grad_clip 5.0, seed 42, hidden 256, val_limit 0).
+# data_dir: folder with train.csv, val.csv and vocab.txt (the prepared word data). Path relative to the repo root.
 data_dir: data/processed/words
+# File name of the training list inside data_dir (columns: image_path, text).
 train_csv: train.csv
+# File name of the validation list inside data_dir.
 val_csv: val.csv
+# Folder that image_path in the CSVs is relative to. "." = the repository root.
 image_root: .
+# Overfit test: use only the first 100 training images, for training AND for validation (0 = off).
+# Training stops as soon as the CER on them reaches 0.
 overfit_n: 100
+# Maximum number of epochs (one epoch = one pass over the data). 100 images / batch 10 = 10 updates per epoch,
+# so at most 3,000 updates.
 epochs: 300
+# Images per mini-batch (one weight update per batch).
 batch_size: 10
+# Peak learning rate (no unit). The OneCycleLR schedule rises to this value and then falls.
 lr: 0.001
+# AdamW weight decay (no unit). 0.0 = no penalty on large weights.
 weight_decay: 0.0
+# Dropout probability in the model (0.0 to 1.0). 0.0 = dropout switched off, so the model can memorise.
 dropout: 0.0
+# Number of data-loading worker processes. 0 = load in the main process.
 num_workers: 0
+# Early stopping: stop after this many epochs in a row without a better validation CER.
+# 1000 is more than the 300 epochs, so this never stops the run.
 patience: 1000
+# Time budget in minutes. Training stops cleanly when it is used up and best.pt is kept. 0 = no limit.
 max_minutes: 30
+# Folder where last.pt, best.pt and log.csv are written.
 ckpt_dir: checkpoints/crnn_overfit
+# Name of this run.
 run_name: crnn_overfit
+# false = images are used as they are (dark ink on a light background). true = flip the pixel values.
 invert: false

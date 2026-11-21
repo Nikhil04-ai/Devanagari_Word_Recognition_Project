@@ -4,7 +4,17 @@
 
 Run from the repository root. Writes results/trocr_full_greedy/{test_predictions.csv, metrics.json}
 (use --decoding beam for results/trocr_full_beam/).
+
+Where it fits in the pipeline: this is the last step. train.py chose best.pt using the validation
+set; here that model is run on the test set (data never used for choosing anything) to get the
+final numbers: CER, WER, accuracy, speed (ms per image), and CER split by seen / unseen words.
+The same shared writer (src/common/io.py) is used by the other models, so all results have the same format.
+
+Decoding modes:
+    greedy = pick the most likely character at each step (fast).
+    beam   = keep the `num_beams` best partial words at each step (slower, can be more accurate).
 """
+# Standard library: argparse (command line), csv (read train words), os (paths), time (timing).
 import argparse
 import csv
 import os
@@ -12,36 +22,117 @@ import time
 
 import torch
 
+# Shared project code: result writer, CER metric, seed function.
 from src.common.io import save_results
 from src.common.metrics import cer
 from src.common.seed import set_seed
 
+# Local modules: config, dataset pieces, model helpers, tokenizer, and the scoring loop from train.py.
 from .config import load_config
 from .dataset import TrOCRWordDataset, get_image_processor, make_loader
 from .model import build_model, count_params, generate_ids
 from .tokenizer import CharTokenizer
 from .train import evaluate_loader
 
+# ======================================= CONCEPTS USED IN THIS FILE =======================================
+# TrOCR: Transformer-based OCR from Microsoft: an image encoder plus a text decoder. This is the model that
+#     train.py trained; load_checkpoint rebuilds it and main runs it on the test images.
+# Encoder-decoder: the encoder turns the image into features, the decoder writes the word from them, one
+#     character at a time (see model.py). generate_ids does this writing step.
+# Checkpoint: a file (best.pt) saved by train.py. It holds the weights, tokenizer, config and epoch number.
+#     load_checkpoint reads it.
+# state_dict: the dictionary of all weight tensors of a model. model.load_state_dict copies the saved weights in.
+# map_location="cpu": load the saved tensors on the CPU first, so loading works with or without a GPU.
+#     The model is moved to the real device at the end of load_checkpoint.
+# Best-epoch selection: train.py keeps the epoch with the lowest validation CER as best.pt. Here ck["epoch"]
+#     is saved as "best_epoch" in the results (see `extra` in main).
+# Test set vs validation set: the validation set is used during training to choose the best epoch; the test set
+#     (test.csv) is used only here, once, for the final honest score.
+# Tokenizer: CharTokenizer maps characters to ids and back. It is stored in the checkpoint, so the same
+#     vocabulary is used as in training. tok.decode (in evaluate_loader) turns predicted ids into text.
+# Greedy decoding: take the most likely character at each step (num_beams = 1). Beam search: keep the k best
+#     partial words at each step (num_beams = 4 by default). main sets `beams` from the --decoding option.
+# CER (character error rate): edit distance between predicted and true text divided by the number of true
+#     characters; lower is better. Computed in evaluate_loader, and again in main for the seen / unseen groups.
+# WER (word error rate) and accuracy: WER counts wrong words (0 or 1 per image here); accuracy is the fraction
+#     of exact matches. Both are computed by the shared writer / evaluate_loader and saved in metrics.json.
+# Seen / unseen words: a test word is "seen" if the same word is in train.csv (train_words). main reports CER
+#     for both groups.
+# ms per image (latency): how many milliseconds one prediction takes at batch size 1 (time_per_image).
+# Warm-up (timing): the first few predictions are slower (GPU start-up), so they run first and are not counted.
+# torch.cuda.synchronize(): GPU work runs in the background; this waits until it is finished, so the clock is right.
+# @torch.no_grad() and eval(): no gradient tracking (saves memory and time) and dropout switched off, so
+#     predictions are repeatable. Used in time_per_image, load_checkpoint and (via train.py) evaluate_loader.
+# fp16 / autocast (amp): half-precision math on the GPU, faster and lighter; main enables it only on a GPU.
+# Seed: set_seed(42) fixes the random number generators so a run can be repeated.
+# Parameter count: number of weights of the model (count_params), stored in metrics.json to report model size.
+# argparse / DataLoader: argparse reads the command-line options; make_loader makes the DataLoader that gives
+#     images in batches.
+# ==========================================================================================================
+
+# ======================================= FILE-LEVEL Q&A (VIVA) ============================================
+# Q: What does this file do?
+# A: It is the final step. It loads best.pt, predicts every test image, measures CER, WER, accuracy, speed (ms per
+#    image) and CER on seen / unseen words, and saves them with the shared writer in src/common/io.py.
+# Q: How is it run?
+# A: From the repository root: python -m src.trocr.evaluate --ckpt checkpoints/trocr_full/best.pt
+#    Add --decoding beam to use beam search. --limit N tests only the first N images (quick check).
+# Q: What does it read and what does it write?
+# A: It reads the checkpoint (--ckpt), test.csv and train.csv from --data_dir and the images they list. It writes
+#    results/trocr_<subset>_<decoding>/test_predictions.csv and metrics.json, and prints a short summary.
+# Q: Why is the test set used only here?
+# A: train.py chose the best epoch with the validation set. The test set was never used for any choice, so its
+#    scores are an honest estimate of how the model does on new images.
+# ==========================================================================================================
+
 
 def load_checkpoint(path, device="cpu"):
-    """Return (model, tokenizer, cfg, ckpt_dict) from a best.pt written by train.py."""
+    """Return (model, tokenizer, cfg, ckpt_dict) from a best.pt written by train.py.
+
+    Input: checkpoint path, device. Returns the model in eval mode on `device`, the tokenizer,
+    the config namespace, and the raw checkpoint dict.
+    Why the config and tokenizer come from the checkpoint: the model must be rebuilt with the same
+    vocabulary and settings it was trained with, whatever the YAML files say now."""
+    # Q: What does it do and why does it exist?
+    # A: It reads best.pt and rebuilds the trained model, tokenizer and config from it. main calls it so that
+    #    the test run needs only the checkpoint file and no training code state.
+    # Q: Why build the model with load_pretrained=False and then call load_state_dict?
+    # A: The real weights come from the checkpoint, so downloading the pre-trained TrOCR weights would be wasted.
+    #    Building from the saved config and tokenizer gives the same layer shapes (e.g. our vocabulary size);
+    #    with other shapes load_state_dict would fail with a size mismatch.
     if not os.path.exists(path):
         raise FileNotFoundError(f"checkpoint not found: {path}")
+    # Load on the CPU first; the model is moved to the device at the end.
     ck = torch.load(path, map_location="cpu", weights_only=False)
     cfg = load_config(None, ck["config"])
     tok = CharTokenizer.from_dict(ck["tokenizer"])
     model = build_model(cfg, tok, load_pretrained=False)  # same architecture; weights come from the checkpoint
     model.load_state_dict(ck["model"])
+    # eval() switches dropout off.
     return model.to(device).eval(), tok, cfg, ck
 
 
 @torch.no_grad()
 def time_per_image(model, ds, device, num_beams, max_length, n=200, warmup=10):
-    """Average ms per image at batch size 1 (GPU if available), after warm-up."""
+    """Average ms per image at batch size 1 (GPU if available), after warm-up.
+
+    Inputs: model, dataset, device, decoding settings, n = number of images to time, warmup = images
+    to run first and not count. Returns: float, milliseconds per image.
+    Why batch size 1: it measures the time of one single prediction, like real use.
+    Why warm-up: the first calls are slower (GPU start-up, memory set-up), which would distort the average."""
+    # Q: What does it do and why does it exist?
+    # A: It measures the average time of one prediction (batch size 1) in milliseconds. main stores it as
+    #    "ms_per_image" in the results, so models can be compared by speed as well as by accuracy.
+    # Q: What would go wrong without the warm-up and the synchronize() calls?
+    # A: The first calls are slower, which would raise the average. Without synchronize() the GPU may still be
+    #    working when the clock is read, so the measured time would be too small.
+    # Preload the images as tensors (1, 3, H, W) on the device, so that the timing contains only the model, not file reading.
     px = [ds[i]["pixel_values"][None].to(device) for i in range(min(n + warmup, len(ds)))]
+    # If there are very few images, keep at least one for the timed part.
     warm = min(warmup, max(len(px) - 1, 0))
     for x in px[:warm]:
         generate_ids(model, x, num_beams=num_beams, max_length=max_length)
+    # GPU work is asynchronous; synchronize() waits until it is really finished, so the clock is correct.
     if device.type == "cuda":
         torch.cuda.synchronize()
     t0 = time.time()
@@ -49,10 +140,18 @@ def time_per_image(model, ds, device, num_beams, max_length, n=200, warmup=10):
         generate_ids(model, x, num_beams=num_beams, max_length=max_length)
     if device.type == "cuda":
         torch.cuda.synchronize()
+    # Seconds -> milliseconds, divided by the number of timed images.
     return 1000 * (time.time() - t0) / max(len(px) - warm, 1)
 
 
 def main():
+    """Command-line entry point: load the checkpoint, predict the test set, compute the metrics, save the results."""
+    # Q: What does it do and why does it exist?
+    # A: It runs the whole final test: read the options, load best.pt, predict the test images, time the model,
+    #    split CER into seen / unseen words and save everything with save_results.
+    # Q: Why is the speed measured separately from the evaluate_loader run?
+    # A: evaluate_loader works in batches (--batch_size) for speed, but ms per image should describe one single
+    #    prediction. time_per_image therefore runs the model again at batch size 1 on up to 200 images.
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--data_dir", default="data/processed/words")
@@ -69,10 +168,13 @@ def main():
     set_seed(42)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, tok, cfg, ck = load_checkpoint(a.ckpt, device)
+    # Greedy search is the same as a beam width of 1.
     beams = a.num_beams if a.decoding == "beam" else 1
 
+    # Test dataset. first_n=a.limit keeps only the first N rows for a quick check (0 = all rows).
     ds = TrOCRWordDataset(os.path.join(a.data_dir, a.csv), tok, get_image_processor(cfg.pretrained),
                           max_length=cfg.max_length, root=a.image_root, first_n=a.limit)
+    # Predict every test image. with_loss=False: no true-label forward pass is needed, only the predicted words.
     res = evaluate_loader(model, make_loader(ds, a.batch_size, False, a.num_workers), tok, cfg, device,
                           amp=device.type == "cuda", num_beams=beams, with_loss=False)
     ms = time_per_image(model, ds, device, beams, cfg.max_length)
@@ -80,12 +182,17 @@ def main():
         print("WARNING: no GPU found, ms_per_image was measured on CPU")
 
     # every test word also occurs in training (new writers, not new words): report seen / unseen anyway
+    # Set of all words in the training CSV, for a fast "is this word seen in training?" test.
     with open(os.path.join(a.data_dir, "train.csv"), encoding="utf-8", newline="") as f:
         train_words = {r["text"] for r in csv.DictReader(f)}
+    # Indices of test samples whose true word is in the training set ("seen") and of the others ("unseen").
     seen = [i for i, r in enumerate(res["refs"]) if r in train_words]
     seen_set = set(seen)
     unseen = [i for i in range(len(res["refs"])) if i not in seen_set]
+    # pick(idx, key) -> the entries of res[key] at the given indices.
     pick = lambda idx, key: [res[key][i] for i in idx]  # noqa: E731
+    # Extra information stored next to the standard metrics. Rounded for readability;
+    # None is used when a group is empty (CER of an empty list is not defined).
     extra = {
         "model": "trocr", "train_subset": a.subset, "decoding": a.decoding,
         "params": count_params(model, trainable_only=False),
@@ -94,6 +201,7 @@ def main():
         "cer_seen_words": cer(pick(seen, "refs"), pick(seen, "hyps")) if seen else None,
         "cer_unseen_words": cer(pick(unseen, "refs"), pick(unseen, "hyps")) if unseen else None,
     }
+    # The shared writer saves test_predictions.csv and metrics.json (CER, WER, accuracy, ...) under results/<run_name>/ and returns the metrics dict.
     m = save_results(f"trocr_{a.subset}_{a.decoding}", res["paths"], res["refs"], res["hyps"], extra)
     print({k: m[k] for k in ("run_name", "num_samples", "cer", "wer", "accuracy", "params",
                              "train_time_min", "ms_per_image")})

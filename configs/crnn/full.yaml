@@ -1,20 +1,39 @@
 # Full CRNN-CTC run on the real IIIT-HW-Dev data (Kaggle GPU).
 # python -m src.crnn.train --config configs/crnn/full.yaml
+# Settings below are read by src/crnn/train.py. Keys that are not written here use the DEFAULTS in that file.
+# data_dir: folder with train.csv, val.csv and vocab.txt (the prepared word data). Path relative to the repo root.
 data_dir: data/processed/words
+# File name of the training list inside data_dir (columns: image_path, text).
 train_csv: train.csv
+# File name of the validation list inside data_dir.
 val_csv: val.csv
+# Folder that image_path in the CSVs is relative to. "." = the repository root.
 image_root: .          # image_path in the CSVs is relative to the repo root
+# Maximum number of epochs (one epoch = one pass over the training data).
 epochs: 30
+# Images per mini-batch (one weight update per batch).
 batch_size: 64
+# Peak learning rate (no unit). The OneCycleLR schedule rises to this value and then falls.
 lr: 0.001
+# AdamW weight decay (no unit). A small penalty on large weights.
 weight_decay: 0.0001
+# Gradient clipping: the largest allowed gradient norm. Bigger gradients are scaled down.
 grad_clip: 5.0
+# Number of data-loading worker processes (loading runs in parallel with training).
 num_workers: 2
+# Random seed (integer) so that a run can be repeated.
 seed: 42
+# Early stopping: stop after this many epochs in a row without a better validation CER.
 patience: 8
+# Time budget in minutes. Training stops cleanly when it is used up and best.pt is kept. 0 = no limit.
 max_minutes: 150       # time budget: stops cleanly and keeps best.pt
+# Folder where last.pt, best.pt and log.csv are written.
 ckpt_dir: checkpoints/crnn_full
+# Name of this run.
 run_name: crnn_full
+# Size of the hidden layers of the model (number of units): the LSTM hidden size and the layer before it.
 hidden: 256
+# Dropout probability in the model (0.0 to 1.0). Randomly switches off features while training.
 dropout: 0.3
+# false = images are used as they are (dark ink on a light background). true = flip the pixel values.
 invert: false          # set true if the ink is white on a dark background

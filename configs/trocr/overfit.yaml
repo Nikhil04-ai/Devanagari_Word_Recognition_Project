@@ -2,25 +2,55 @@
 # python -m src.trocr.train --config configs/trocr/overfit.yaml
 # Stops by itself as soon as val CER (on the same 100 images) is 0. If it never gets there, check the
 # start / end / padding token ids (pad = 0, bos = 1, eos = 2) and that padded labels are -100.
+# Settings below are read by src/trocr/train.py (via src/trocr/config.py). Keys that are not written here
+# use the DEFAULTS in config.py (train_limit 0, val_limit 0, freeze_encoder_epochs 0, num_beams 4).
+# approach: model type. finetune = pre-trained TrOCR decoder, with our own character vocabulary.
+# The other allowed value is custom_decoder (a backup).
 approach: finetune
+# Hugging Face name of the pre-trained TrOCR model. Its image encoder is reused.
 pretrained: microsoft/trocr-small-handwritten
+# Folder with train.csv, val.csv and vocab.txt (the prepared word data). Path relative to the repo root.
 data_dir: data/processed/words
+# File name of the training list inside data_dir (columns: image_path, text).
 train_csv: train.csv
+# File name of the validation list inside data_dir.
 val_csv: val.csv
+# Folder that image_path in the CSVs is relative to. "." = the repository root.
 image_root: .
+# Overfit test: use only the first 100 training images, for training AND for validation (0 = off).
 overfit_n: 100
+# Images per mini-batch.
 batch_size: 10
+# Gradient accumulation: number of mini-batches added up before one weight update.
+# 1 = update after every batch. Effective batch size = batch_size * grad_accum.
 grad_accum: 1
+# Maximum number of epochs (one epoch = one pass over the data). The comment on the right
+# counts the weight updates: 100 images / batch 10 = 10 per epoch.
 epochs: 100                    # 1,000 updates
+# Learning rate for the pre-trained weights (no unit). Small, because they only need a small change.
 lr_pretrained: 5.0e-05
+# Learning rate for the new weights (no unit): the character embeddings and the output layer,
+# which start random and must learn from scratch.
 lr_new: 3.0e-04
+# AdamW weight decay (no unit). 0.0 = no penalty on large weights.
 weight_decay: 0.0
+# Learning-rate warm-up: number of weight updates over which the rate rises linearly from 0.
+# After that it falls along a cosine curve to 0. train.py limits this to one tenth of all updates.
 warmup_steps: 20
+# Gradient clipping: the largest allowed gradient norm. Bigger gradients are scaled down.
 grad_clip: 1.0
+# Longest label in tokens, including the end token.
 max_length: 32
+# Early stopping: stop after this many epochs in a row without a better validation CER.
+# 1000 is more than the 100 epochs, so it never triggers. The run stops by itself when CER reaches 0.
 patience: 1000
+# Time budget in minutes. Training stops cleanly when it is used up and best.pt is kept. 0 = no limit.
 max_minutes: 30
+# Number of data-loading worker processes. 0 = load in the main process.
 num_workers: 0
+# Random seed (integer) so that a run can be repeated.
 seed: 42
+# Folder where last.pt, best.pt and log.csv are written.
 ckpt_dir: checkpoints/trocr_overfit
+# Name of this run.
 run_name: trocr_overfit

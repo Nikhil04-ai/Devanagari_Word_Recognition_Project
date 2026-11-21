@@ -3,27 +3,57 @@
 # Time budget about 3 to 3.5 h. Measure the first epoch, then set `epochs` so that the whole run fits:
 # the learning rate only decays fully if the run reaches its last epoch. If one epoch is too slow,
 # set train_limit (for example 30000 random training images) and report it as a limited-budget result.
+# Settings below are read by src/trocr/train.py (via src/trocr/config.py). Keys that are not written here
+# use the DEFAULTS in config.py (overfit_n 0, num_beams 4).
+# approach: model type. finetune = pre-trained TrOCR decoder, with our own character vocabulary.
+# The other allowed value is custom_decoder (a backup).
 approach: finetune             # finetune = pre-trained decoder with a character vocabulary
+# Hugging Face name of the pre-trained TrOCR model. Its image encoder is reused.
 pretrained: microsoft/trocr-small-handwritten
+# Folder with train.csv, val.csv and vocab.txt (the prepared word data). Path relative to the repo root.
 data_dir: data/processed/words
+# File name of the training list inside data_dir (columns: image_path, text).
 train_csv: train.csv
+# File name of the validation list inside data_dir.
 val_csv: val.csv
+# Folder that image_path in the CSVs is relative to. "." = the repository root.
 image_root: .                  # image_path in the CSVs is relative to the repo root
+# Train on a random subset of this many images. 0 = use all training images.
 train_limit: 0                 # 0 = all 69,853 training images
+# Validate on a random subset of this many validation images in each epoch (0 = use all).
 val_limit: 1500                # random subset of the validation split per epoch (faster); test is always full
+# Images per mini-batch.
 batch_size: 16
+# Gradient accumulation: number of mini-batches added up before one weight update.
+# Effective batch size = batch_size * grad_accum.
 grad_accum: 2                  # effective batch 32
+# Maximum number of epochs (one epoch = one pass over the training data).
 epochs: 5
+# Learning rate for the pre-trained weights (no unit). Small, because they only need a small change.
 lr_pretrained: 5.0e-05
+# Learning rate for the new weights (no unit): the character embeddings and the output layer,
+# which start random and must learn from scratch.
 lr_new: 3.0e-04
+# AdamW weight decay (no unit). A small penalty on large weights.
 weight_decay: 0.01
+# Learning-rate warm-up: number of weight updates over which the rate rises linearly from 0.
+# After that it falls along a cosine curve to 0. train.py limits this to one tenth of all updates.
 warmup_steps: 300
+# Gradient clipping: the largest allowed gradient norm. Bigger gradients are scaled down.
 grad_clip: 1.0
+# Longest label in tokens, including the end token.
 max_length: 32                 # longest label is 23 characters
+# Number of first epochs in which the image encoder is frozen (not trained). 0 = train it from the start.
 freeze_encoder_epochs: 0
+# Early stopping: stop after this many epochs in a row without a better validation CER.
 patience: 3
+# Time budget in minutes. Training stops cleanly when it is used up and best.pt is kept. 0 = no limit.
 max_minutes: 190               # time budget: stops cleanly and keeps best.pt
+# Number of data-loading worker processes (loading runs in parallel with training).
 num_workers: 2
+# Random seed (integer) so that a run can be repeated.
 seed: 42
+# Folder where last.pt, best.pt and log.csv are written.
 ckpt_dir: checkpoints/trocr_full
+# Name of this run.
 run_name: trocr_full
