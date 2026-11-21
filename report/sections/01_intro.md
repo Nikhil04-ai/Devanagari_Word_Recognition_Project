@@ -1,24 +1,13 @@
+*Owner: Monu. Numbers come only from `results/*/metrics.json`, `data/processed/words/stats.json` and `results/summary/error_analysis.md`.*
+
+**Abstract.** Handwritten Hindi, written in the Devanagari script, is a low-resource problem for optical character recognition (OCR): there is little public labelled data, and the script joins letters with a headline, attaches vowel signs on every side of a consonant and forms conjuncts from half-letters. We compare three model families with one shared metric implementation: a CNN that classifies isolated handwritten characters (DHCD), a CRNN with a bidirectional LSTM trained with CTC loss [1], and a TrOCR-style Transformer encoder-decoder fine-tuned from an English handwriting checkpoint [2]. The two word models are trained and tested on IIIT-HW-Dev [3]; the test set has 12,869 word images by 3 writers who do not appear in training. With greedy decoding the two word models are equal at character level, with a character error rate (CER) of 6.59 % for the CRNN and 6.47 % for the TrOCR-style model, but the TrOCR-style model gets more whole words right: its word error rate (WER) is 22.32 % against 26.05 %. It pays with 3.7 times the parameters and about 20 times the prediction time. The CNN classifies isolated characters with 99.72 % accuracy, a number that is not directly comparable with the word-level error rates. For both word models the hardest part of the script is the conjunct (the virama), and the most frequent confusions are between look-alike letters. Every test word also occurs in the training split, so the results measure generalisation to new writers, not to new words.
+
 # 1. Introduction
 
-*Owner: Monu. Draft below uses only verified facts; edit freely, keep it to about half a page, and delete the italic notes.*
+Reading handwritten text is an old problem, but it is far from solved for most Indian scripts. Devanagari, used to write Hindi, Sanskrit and other languages, is used by nearly 400 million people [3], yet it has much less public labelled handwriting data and fewer ready-made tools than English. Before IIIT-HW-Dev was released, the public Devanagari word datasets had at most about 27,000 words, and the largest of them covered only words for legal amounts [3].
 
-Reading handwritten text is an old problem, but it is far from solved for most Indian scripts. Hindi, written in the Devanagari script, is used by hundreds of millions of people, yet it has much less public labelled handwriting data and many fewer ready-made tools than English. It is a **low-resource** setting for optical character recognition (OCR).
+**Why the script is hard.** A horizontal headline (shirorekha) joins the letters of a word, so characters cannot simply be cut apart. Vowel signs (matras) attach above, below, before or after a consonant: in कि the vowel sign is drawn before the consonant but stored after it in Unicode. Half-letters join into conjuncts such as क्ष, and the same conjunct can be written with the virama visible or hidden [3]. Several letters look alike, for example ब and व, or घ and ध. Handwriting adds large differences between writers.
 
-Devanagari is hard for a machine for several reasons. A horizontal headline (shirorekha) joins the letters of a word, so characters cannot simply be cut apart. Vowel signs (matras) attach above, below, before or after a consonant: in कि the vowel sign is drawn before the consonant but stored after it in Unicode. Half-letters join into conjuncts such as क्ष. Several letters look alike, for example ब and व, or घ and ध. Handwriting adds large differences between writers.
+**Why it is a low-resource problem.** Our word dataset, IIIT-HW-Dev, has about 95,000 labelled word images, but they come from only 12 writers and repeat a closed list of about 9,500 distinct words, so the models see little variety of handwriting and few distinct words (Section 3.4). Earlier work on this dataset needed synthetic data or pre-training on English handwriting to cope with the shortage of real data [3]. This is why we include a model pre-trained on English handwriting (Model C) and ask whether that pre-training transfers to Devanagari.
 
-In this project we recognise handwritten Devanagari at two levels and compare three model families:
-
-1. a **convolutional neural network (CNN)** that classifies single handwritten characters (UCI DHCD dataset);
-2. a **CRNN**, a CNN followed by a bidirectional LSTM and trained with CTC loss, that reads whole handwritten words (IIIT-HW-Dev dataset) [1];
-3. a **TrOCR-style encoder-decoder**, a pre-trained Transformer model fine-tuned on the same word data [2].
-
-Our contributions are:
-
-- a common evaluation of the three models with one shared implementation of the character error rate (CER) and word error rate (WER);
-- a comparison of character-level and word-level error rates on a low-resource script, with a clear statement of why the two levels are not directly comparable;
-- an analysis of the errors: which characters, vowel signs and conjuncts are confused, and how error depends on word length;
-- an open, reproducible code base with fixed splits, seeds and a results format shared by all models.
-
-*TODO (after results): one sentence stating the main finding.*
-
-The rest of the report is organised as follows. Section 2 reviews related work, Section 3 describes the data, Sections 4 to 6 describe the three models, Section 7 presents and analyses the results, and Section 8 concludes.
+We recognise handwritten Devanagari at two levels with three model families: a **CNN** that classifies single characters (DHCD [4]), a **CRNN** with a bidirectional LSTM and CTC loss [1], [5] that reads whole words (IIIT-HW-Dev [3]), and a **TrOCR-style encoder-decoder** pre-trained on English and fine-tuned on the same words [2]. Our contributions are a common evaluation of the three with one shared implementation of the character and word error rates; a comparison of character-level and word-level error with a clear statement of why they are not directly comparable; an analysis of which characters, vowel signs and conjuncts are confused; and an open code base with fixed splits, seeds and one results format for all models. Section 2 reviews related work, Section 3 describes the data, Sections 4 to 6 the three models, Section 7 the results and Section 8 concludes.

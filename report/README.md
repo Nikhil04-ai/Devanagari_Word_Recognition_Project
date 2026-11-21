@@ -12,7 +12,10 @@ The submission is **one PDF, at most 10 MB, about 6 to 8 pages**. It is assemble
 | 6 | `sections/06_trocr.md` | Prabhat | Model C: TrOCR-style |
 | 7 | `sections/07_results_analysis.md` | Monu (tables from Ravi) | Comparison table, error analysis |
 | 8 | `sections/08_conclusion.md` | Monu | Findings, limitations, future work |
+| 9 | `sections/09_contributions.md` | Monu (everyone confirms) | Who did what |
 | - | `references.md` | Monu | Numbered reference list |
+
+The abstract is at the top of `sections/01_intro.md`.
 
 ## Rules
 
@@ -31,7 +34,17 @@ The submission is **one PDF, at most 10 MB, about 6 to 8 pages**. It is assemble
 
 ## Merging into a PDF
 
-1. Paste the sections in order into one document (Word, Google Docs or LaTeX).
-2. Fix numbering of figures and tables, and make sure every figure is mentioned in the text.
-3. Export as PDF and check the size and that Hindi text shows correctly.
-4. Save the final file as `report/Devanagari_Word_Recognition_Report.pdf` (this one file is allowed in Git).
+From the repository root (needs Microsoft Edge or Chrome, and `pip install -r requirements.txt`):
+
+```bash
+python report/tools/build_report.py            # draft: report/build/report_draft.pdf (not in Git)
+python report/tools/build_report.py --final    # report/Devanagari_Word_Recognition_Report.pdf
+```
+
+The script joins the sections in order, drops the `*Owner: ...*` lines, adds the numbered reference list from `references.md` (without its Status column) and prints the PDF with Edge, which shows Hindi correctly. It reports the page count and size, and lists every line that still has a TODO, `(check)` or an italic note. `--final` refuses to run while any is left. Then:
+
+1. Open the PDF: check that every figure is mentioned in the text and Hindi text shows correctly.
+2. Keep it to about 6 to 8 pages and under 10 MB.
+3. The final file `report/Devanagari_Word_Recognition_Report.pdf` is the one file allowed in Git.
+
+Section 7.4 comes from `python report/tools/word_frequency.py`, which reads `results/*/test_predictions.csv`.
