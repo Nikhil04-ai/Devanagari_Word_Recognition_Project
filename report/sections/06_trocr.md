@@ -4,7 +4,7 @@
 
 TrOCR [2] is an encoder-decoder model. The **encoder** is an image Transformer: the word image is cut into 16×16 patches, which are embedded and processed with self-attention. The **decoder** is a text Transformer that generates the transcription one token at a time, attending to the encoder output through cross-attention; it is trained with teacher forcing (it sees the correct previous characters and predicts the next one) and, at prediction time, generates from a start token until an end token.
 
-Unlike the CRNN, which predicts each image column independently, the decoder is a character-level language model conditioned on the image, which can help with signs whose form depends on their neighbours.
+Unlike the CRNN, whose output at each image column does not depend on its own earlier outputs, the decoder is a character-level language model conditioned on the image, which can help with signs whose form depends on their neighbours.
 
 ## 6.2 Adaptation to Devanagari
 

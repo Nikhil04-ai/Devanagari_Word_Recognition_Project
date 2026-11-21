@@ -6,9 +6,9 @@ All models are evaluated on their own test set, once, with the shared metric cod
 
 | Model | Test data | Level | Decoding | CER ↓ | WER ↓ | Accuracy ↑ | Parameters | Train time |
 |---|---|---|---|---|---|---|---|---|
-| A: CNN | DHCD test (13,800 isolated characters) | Character | argmax | 0.30 % | n/a | 99.72 % | 1.18 M | 1.5 min |
-| B: CRNN-CTC | IIIT-HW-Dev test (12,869 words) | Word | greedy | 6.59 % | 26.05 % | 73.95 % | 7.71 M | 82.1 min |
-| C: TrOCR-style | IIIT-HW-Dev test (12,869 words) | Word | greedy | 6.47 % | 22.32 % | 77.68 % | 28.86 M | 89.7 min |
+| A: CNN | DHCD (13,800 characters) | Character | argmax | 0.30 % | n/a | 99.72 % | 1.18 M | 1.5 min |
+| B: CRNN-CTC | IIIT-HW-Dev (12,869 words) | Word | greedy | 6.59 % | 26.05 % | 73.95 % | 7.71 M | 82.1 min |
+| C: TrOCR-style | IIIT-HW-Dev (12,869 words) | Word | greedy | 6.47 % | 22.32 % | 77.68 % | 28.86 M | 89.7 min |
 
 For Model B the train time is the time to the best epoch (epoch 22 of 25; the whole run took 93.3 min). For Model A, accuracy is the main metric, and its CER is computed over Unicode code points, so it is not exactly 1 − accuracy (क्ष, त्र and ज्ञ have three code points each).
 
@@ -52,11 +52,11 @@ Counts below are character errors (substitutions, deletions and insertions) on t
 |---|---|---|
 | 1 | त → न (128) | य → स (93) |
 | 2 | म → ग (67) | त → न (92) |
-| 3 | ू → ु (60) | ध → घ (63) |
-| 4 | स → र (52) | ं → ँ (49) |
-| 5 | ध → घ (46) | ू → ु (49) |
+| 3 | ◌ू → ◌ु (60) | ध → घ (63) |
+| 4 | स → र (52) | ◌ं → ◌ँ (49) |
+| 5 | ध → घ (46) | ◌ू → ◌ु (49) |
 
-Both models mix up similar-looking consonants (त/न, ध/घ, म/ग) and the long and short vowel signs (ू/ु). TrOCR also confuses anusvara and chandrabindu (ं → ँ, 49 times against 31 for the CRNN).
+Both models mix up similar-looking consonants (त/न, ध/घ, म/ग) and the long and short vowel signs ◌ू and ◌ु. TrOCR also confuses anusvara and chandrabindu, ◌ं → ◌ँ, 49 times against 31 for the CRNN.
 
 **Kinds of errors.** Errors per true character of each type, counting insertions against the character type that was inserted:
 

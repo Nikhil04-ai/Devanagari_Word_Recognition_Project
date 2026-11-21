@@ -33,7 +33,7 @@ FINAL_PDF = os.path.join(REPORT, "P09_report.pdf")
 MAX_MB = 10.0
 
 TITLE = "Handwritten Devanagari Word Recognition: CRNN-CTC vs Transformer OCR (P09)"
-TEAM = "Nikhil, Prabhat, Ravi, Monu Rajpoot"
+TEAM = "Nikhil Kumar Mehta, Prabhat Patidar, Monu Rajpoot, Ravi Rajpoot"
 
 BROWSERS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -56,6 +56,8 @@ table { border-collapse: collapse; margin: 6px 0 8px 0; font-size: 8.5pt; }
 tr { page-break-inside: avoid; }
 th, td { border: 1px solid #aaa; padding: 2px 6px; vertical-align: top; }
 th { background: #eee; }
+td.nw, th.nw { white-space: nowrap; }
+span.dv { font-family: "Nirmala UI", "Noto Sans Devanagari", sans-serif; display: inline-block; white-space: nowrap; }
 img { max-width: 62%; max-height: 4.4cm; display: block; margin: 6px auto 2px auto; page-break-inside: avoid; }
 code { font-family: Consolas, monospace; font-size: 8.8pt; }
 ol.refs { padding-left: 22px; font-size: 8.3pt; }
@@ -127,6 +129,12 @@ def build_html():
     for path in after_references():
         add(path)
     body = "\n".join(parts)
+    # Short table cells (numbers such as "0.30 %", model names such as "C: TrOCR-style") must not
+    # wrap; longer text cells still wrap normally.
+    body = re.sub(r"<(td|th)( [^>]*)?>([^<]{1,14})</\1>", r'<\1 class="nw"\2>\3</\1>', body)
+    # A vowel sign shown alone is written on a dotted circle (U+25CC). Both must come from the same
+    # font, or the browser shapes the sign alone and draws a second circle.
+    body = re.sub("(◌[ऀ-ःऺ-ॏॕ-ॗॢॣ]+)", r'<span class="dv">\1</span>', body)
     # Section files reference figures as ../figures/x.png; the HTML lives in report/build/,
     # so the same relative path still points to report/figures/.
     return f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{TITLE}</title>' \

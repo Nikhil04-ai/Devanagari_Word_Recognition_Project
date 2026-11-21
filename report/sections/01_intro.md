@@ -2,7 +2,7 @@
 
 # 1. Introduction
 
-Devanagari, used to write Hindi, Sanskrit and other languages, is used by nearly 400 million people [3], yet it has much less public labelled handwriting data than English. Before IIIT-HW-Dev was released, the public Devanagari word datasets had at most about 27,000 words, and the largest of them covered only words for legal amounts [3].
+Devanagari, used to write Hindi, Sanskrit and other languages, is used by nearly 400 million people [3], yet it has much less public labelled handwriting data than English. Before IIIT-HW-Dev was released, the public Devanagari word datasets listed by Dutta et al. had 16k words (RoyDB) and 27k words (LAW), and the larger one contains only legal-amount words [3, Table I].
 
 **Why the script is hard.** A horizontal headline (shirorekha) joins the letters of a word, so characters cannot simply be cut apart. Vowel signs (matras) attach above, below, before or after a consonant: in कि the vowel sign is drawn before the consonant but stored after it in Unicode. Half-letters join into conjuncts such as क्ष, and the same conjunct can be written with the virama visible or hidden [3]. Several letters look alike, for example ब and व, or घ and ध. Handwriting adds large differences between writers.
 
