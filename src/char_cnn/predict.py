@@ -24,6 +24,32 @@ from PIL import Image
 from .dataset import CHARS, NUM_CLASSES, to_input
 from .model import CharCNN
 
+# CONCEPTS USED IN THIS FILE
+# - Inference (prediction): using the trained model on a new image, with no training. predict() does this with the
+#   weights loaded by load_model.
+# - Checkpoint: the .pt file saved by train.py with weights, class characters and settings. load_model reads it.
+# - eval mode and torch.no_grad: eval() turns dropout off and uses BatchNorm's saved statistics; no_grad skips
+#   gradient storage. Both give stable, faster predictions.
+# - Preprocessing to DHCD style: grayscale, make the ink white on black, crop to the ink, pad to a square, resize to
+#   28x28, add a 2 px border to get 32x32. Done in to_dhcd, so any photo looks like the training images.
+# - Threshold: pixels brighter than 40 count as ink (ignores faint noise); a mean above 127 means a light background,
+#   so the image is inverted.
+# - Bilinear interpolation: smooth resizing that mixes neighbouring pixels. Used in the 28x28 resize.
+# - Batch dimension, logits and argmax: unsqueeze(0) makes a batch of 1; the model gives 46 scores and argmax picks
+#   the best class index.
+# - Unicode NFC normalisation: gives one standard form of the returned text so comparisons are reliable.
+# - Contract 5: the project's agreed prediction interface (load_model and predict).
+
+# FILE Q&A (viva)
+# Q: What part of the project is this file?
+# A: The last step of Model A: a simple interface to load a checkpoint once and classify a picture of one character.
+# Q: How is it run?
+# A: As a library: load_model(path), then predict(model, PIL image). From the command line: python -m
+#    src.char_cnn.predict [checkpoint] image1.png image2.png (give the checkpoint first).
+# Q: What does it read and write?
+# A: It reads the checkpoint file and the image files. It writes nothing; the command line prints the image path and
+#    the predicted character.
+
 
 def load_model(ckpt_path: str, device: str = "cpu"):
     """Load a trained checkpoint for prediction.
@@ -32,6 +58,12 @@ def load_model(ckpt_path: str, device: str = "cpu"):
     Returns a dict {"model": CharCNN in eval mode, "device": device, "chars": list of 46 characters}.
     Why a dict: predict() needs the model, the device and the class characters together.
     """
+    # Q: What does load_model do and why does it exist?
+    # A: It loads a checkpoint, rebuilds CharCNN, loads the weights, sets eval mode and returns a dict with the model,
+    #    device and class characters. Load once, predict many times.
+    # Q: Why return a dict and prefer the characters stored in the checkpoint?
+    # A: predict needs the model, device and characters together. The checkpoint's own list is the one the model was
+    #    trained with; the list in dataset.py is only a fallback.
     # weights_only=False because the checkpoint also holds plain Python objects (cfg, chars).
     ck = torch.load(ckpt_path, map_location=device, weights_only=False)
     # Same architecture as in training, then fill it with the saved weights.
@@ -48,6 +80,12 @@ def to_dhcd(image: Image.Image) -> np.ndarray:
     Why: the network was trained on DHCD images (white character, black background, 32x32).
     A photo or scan looks different, so we convert it to the same style first.
     """
+    # Q: What does to_dhcd do and why does it exist?
+    # A: It converts any PIL image into a (32, 32) uint8 array with a white character on black, like DHCD. The network
+    #    was trained on that format.
+    # Q: Why crop, pad to a square, then resize to 28x28 plus a border?
+    # A: Cropping centres the ink; padding to a square stops the resize from stretching the character; 28 + 2 + 2
+    #    border = 32 matches the DHCD size and margin. The mean > 127 test finds light-paper images to invert.
     # Any mode (RGB, RGBA, ...) -> grayscale 2-D array, values 0..255.
     a = np.asarray(image.convert("L"), dtype=np.uint8)
     if a.mean() > 127:  # light background -> invert so the ink is white
@@ -75,6 +113,12 @@ def predict(model, image) -> str:
     model: the dict returned by load_model. image: a PIL image of a single character.
     Returns the predicted Devanagari character as a string (NFC-normalised).
     """
+    # Q: What does predict do and why does it exist?
+    # A: It classifies one character image: convert with to_dhcd, normalise with to_input, run the model, take argmax
+    #    and return the character as a string.
+    # Q: Why reuse to_input, and why NFC?
+    # A: to_input is the same preprocessing as training, so inputs look the same to the model. NFC gives a standard
+    #    Unicode form of the character for reliable comparison.
     # to_dhcd gives (32,32) uint8 -> tensor -> unsqueeze(0) adds the batch dimension: (1,32,32)
     # -> to_input: float, normalised, with a channel: (1,1,32,32). Same preprocessing as in training.
     x = to_input(torch.from_numpy(to_dhcd(image)).unsqueeze(0).to(model["device"]))

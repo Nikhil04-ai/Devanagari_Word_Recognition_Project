@@ -32,6 +32,35 @@ from .dataset import CharVocab, WordDataset, collate_fn, load_image
 from .model import CRNN, count_params
 from .train import evaluate_loader
 
+# ===== CONCEPTS USED IN THIS FILE =====
+# Checkpoint (best.pt): the saved file from train.py with the weights, the character list and the config.
+# Test set: data used only once at the end, after all choices were made on the validation set, so the score is honest.
+# CER / WER / accuracy: error rates from metrics.py, written by save_results. CER = character edits / characters.
+# CTC loss and blank: needed only because evaluate_loader also computes a loss; blank=0 is CharVocab.BLANK.
+# Greedy decoding: best class per time step, merge repeats, drop blanks (decode.py, called in evaluate_loader).
+# eval mode and torch.no_grad(): dropout off, BatchNorm uses stored statistics, no gradients are kept.
+# state_dict / load_state_dict: the weights dictionary that is saved and loaded back into a CRNN of the same shape.
+# Params: the count of trainable weights (count_params), a measure of model size.
+# ms per image: the average time of one forward pass at batch size 1, a measure of speed.
+# Warm-up and cuda.synchronize: the first runs are slow, and GPU work is asynchronous, so both are handled
+#    before reading the clock in ms_per_image.
+# Seen / unseen words: test words that also appear in the training labels, or not. The dataset has few distinct
+#    words, so CER is also reported for the two groups.
+# CSV: train.csv is read to get the set of training words; test_predictions.csv and metrics.json are written.
+# argparse: reads the command-line flags in main().
+
+# ===== VIVA Q&A FOR THIS FILE =====
+# Q: What part of the project is this file?
+# A: The final test of the CRNN: it scores best.pt on the test split and saves the results in the shared format.
+# Q: How is it run?
+# A: From the repo root: python -m src.crnn.evaluate --ckpt checkpoints/crnn_full/best.pt
+# Q: What does it read and write?
+# A: It reads the checkpoint, test.csv, train.csv and the images. It writes results/crnn_<subset>_greedy/
+#    test_predictions.csv and metrics.json (through save_results) and prints a summary.
+# Q: Why is the test set used only here?
+# A: Epochs and the best checkpoint were chosen on the validation set. A test set used once afterwards gives a
+#    fair estimate of how the model works on new data.
+
 
 def load_checkpoint(path, device):
     """Load a checkpoint written by train.py.
@@ -39,6 +68,12 @@ def load_checkpoint(path, device):
     path: .pt file. device: torch device to place the model on.
     Returns (model in eval mode, CharVocab, the raw checkpoint dict).
     """
+    # Q: What does it do and why does it exist?
+    # A: It loads best.pt, rebuilds the CharVocab and an identical CRNN, loads the saved weights and puts the
+    #    model in eval mode. Testing needs the same network and the same character indices as in training.
+    # Q: Why is the vocab built from ck["chars"] and why weights_only=False?
+    # A: The saved character list guarantees the same indices as in training, even if vocab.txt changed later.
+    #    The file also holds plain Python objects (cfg, chars), so weights_only=False is needed; load only your own.
     # weights_only=False: the file holds plain Python objects (cfg, chars) as well as tensors.
     # Only load checkpoints that you trained yourself.
     ck = torch.load(path, map_location=device, weights_only=False)
@@ -59,6 +94,12 @@ def ms_per_image(model, paths, root, device, invert, n=200, warmup=10):
     and not timed. Returns milliseconds per image (float).
     Only the network forward pass is timed. Image loading and decoding are not included.
     """
+    # Q: What does it do and why does it exist?
+    # A: It loads up to n + warmup test images, runs the model on each one alone (batch size 1) and returns the
+    #    average milliseconds per image. It exists to report the speed of the model next to CER / WER.
+    # Q: Why the warm-up runs and torch.cuda.synchronize(), and what goes wrong without them?
+    # A: The first calls are slower (start-up), and GPU work is asynchronous. Without warm-up and synchronize the
+    #    clock would count start-up time or stop before the GPU finished, so the ms value would be wrong.
     # Load all images first, so disk reading is not part of the measured time.
     imgs = [load_image(Image.open(os.path.join(root, p)), invert=invert).unsqueeze(0).to(device)
             for p in paths[: n + warmup]]  # each tensor is (1, 1, 64, W)
@@ -78,7 +119,13 @@ def ms_per_image(model, paths, root, device, invert, n=200, warmup=10):
 
 def main():
     """Command-line entry point: load the checkpoint, run the test set, save results, print a summary."""
-    ap = argparse.ArgumentParser()
+    # Q: What does it do and why does it exist?
+    # A: It reads the flags, loads best.pt, runs the test split through evaluate_loader, adds model size, time,
+    #    speed and seen / unseen CER, saves everything with save_results and prints a summary. It is the script entry.
+    # Q: Why is CER also reported separately for seen and unseen test words?
+    # A: The dataset has few distinct words. A model may do well only by remembering training words, so the two
+    #    groups show how it works on words it has never seen. An empty group gives None, not a fake number.
+    ap =argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)  # checkpoint to test, normally best.pt
     ap.add_argument("--data_dir", default="data/processed/words")
     ap.add_argument("--csv", default="test.csv")

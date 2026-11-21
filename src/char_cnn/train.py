@@ -32,6 +32,53 @@ from src.common.seed import set_seed
 from .dataset import CHARS, NUM_CLASSES, load_split, random_affine, stratified_split, to_input
 from .model import CharCNN, count_params
 
+# CONCEPTS USED IN THIS FILE
+# - Epoch: one full pass over all training images. The outer loop in run goes over epochs.
+# - Mini-batch / batch size: the images are processed in small groups (128) and the weights are updated after each
+#   group. The inner loop in run. No DataLoader is used: the data sits on the device and a random permutation
+#   (randperm) picks each batch.
+# - Cross-entropy loss: the error measure for classification (nn.CrossEntropyLoss); it is small when the true class
+#   gets a high score. train_loss_fn and eval_loss_fn.
+# - Label smoothing: the target is not 100 % on the true class but a little spread over the others, so the model is
+#   not over-confident. Used in the training loss only.
+# - Backpropagation / gradient: loss.backward() computes how each weight should change; the optimizer then updates the
+#   weights. zero_grad clears old gradients first.
+# - Adam: an optimizer that adapts the step size of each weight. lr is the learning rate (step size); weight_decay
+#   adds a small penalty on large weights.
+# - Cosine schedule (CosineAnnealingLR): the learning rate falls smoothly from lr towards 0 over the epochs.
+#   sched.step() is called once per epoch.
+# - Mixed precision (autocast + GradScaler): the forward pass uses float16 on a GPU for speed and memory; GradScaler
+#   scales the loss so tiny float16 gradients do not become 0. Only when use_amp is True.
+# - Data augmentation: random_affine changes each training batch a little (rotate, shift, scale, shear). Switched off
+#   for validation and in the overfit test.
+# - Validation vs test: a stratified 10 % of Train is the validation set used to pick best.pt and stop early; the Test
+#   split is not loaded here (make_data).
+# - Seed (set_seed): fixes the random generators so a run can be repeated. Called first in run.
+# - train() / eval() mode and no_grad: train mode has dropout on and BatchNorm updating; eval mode has dropout off.
+#   @torch.no_grad() in evaluate stores no gradients, saving memory.
+# - Checkpoint and resume: best.pt (best validation accuracy) and last.pt (latest epoch plus optimizer, scheduler and
+#   scaler state) let training continue after a disconnect (--resume).
+# - Early stopping and patience: stop if validation accuracy has not improved for `patience` epochs. max_minutes is a
+#   separate time budget.
+# - Overfit test (overfit_n): train and validate on a few samples; a correct model and loop must reach 100 %,
+#   otherwise there is a bug.
+# - Accuracy: share of images whose argmax class equals the label.
+# - YAML config + argparse: settings come from DEFAULTS, then the YAML file, then command-line overrides (load_config,
+#   main).
+
+# FILE Q&A (viva)
+# Q: What part of the project is this file?
+# A: Training of Model A: it loads DHCD Train, splits off validation, trains CharCNN and saves checkpoints and a log.
+# Q: How is it run?
+# A: From the repo root: python -m src.char_cnn.train --config configs/char_cnn/full.yaml. Add --resume to continue
+#    from last.pt. Optional overrides: --epochs, --max_minutes, --overfit_n, --data_dir, --ckpt_dir.
+# Q: What does it read and write?
+# A: It reads the YAML config and the DHCD Train split (via load_split and its cache). In ckpt_dir it writes log.csv,
+#    best.pt and last.pt. The Test split is never read.
+# Q: When does training stop?
+# A: When all epochs are done, when validation accuracy has not improved for `patience` epochs, when max_minutes is
+#    used up, or when the overfit test reaches accuracy 1.0.
+
 # Default settings. A YAML config file or command-line flags override them (see load_config).
 # val_fraction: share of Train kept for validation. lr: learning rate. weight_decay: L2-style penalty
 # that keeps weights small. label_smoothing: softens the one-hot targets. augment: random affine on/off.
@@ -49,6 +96,12 @@ def load_config(path=None, **overrides):
 
     path: YAML file path or None. overrides: keyword settings; a value of None is ignored,
     so unset command-line flags do not erase the YAML value. Returns a new dict.
+    # Q: What does load_config do and why does it exist?
+    # A: It builds the settings dict from DEFAULTS, then the YAML file, then keyword overrides. One dict then drives
+    #    the whole run.
+    # Q: Why copy DEFAULTS and ignore None overrides?
+    # A: dict(DEFAULTS) keeps DEFAULTS unchanged. Command-line flags that were not given are None, so ignoring None
+    #    keeps the YAML value instead of erasing it.
     """
     cfg = dict(DEFAULTS)  # copy, so DEFAULTS itself is never changed
     if path:
@@ -65,6 +118,12 @@ def make_data(cfg):
     Loads the official Train split and cuts a stratified validation part out of it.
     The official Test split is not loaded here, so it cannot leak into model choice.
     """
+    # Q: What does make_data do and why does it exist?
+    # A: It loads the official Train split and cuts a stratified validation part out of it, returning train and
+    #    validation images and labels. The Test split is not loaded here.
+    # Q: Why does overfit_n make the validation set equal to the training samples?
+    # A: It is a sanity check: a correct model and loop must memorise a few samples. Validating on the same samples
+    #    should reach 100 %; if not, there is a bug somewhere.
     images, labels, _ = load_split(cfg["data_dir"], "Train")
     # Same seed in the config -> same split on every run (and after --resume).
     tr, va = stratified_split(labels.numpy(), cfg["val_fraction"], cfg["seed"])
@@ -90,6 +149,13 @@ def evaluate(model, x_uint8, y, device, criterion, batch_size=1024):
     No augmentation here, so the numbers measure the real images.
     Also imported by evaluate.py, so validation and test use the same code.
     """
+    # Q: What does evaluate do and why does it exist?
+    # A: It runs the model over a whole set and returns loss, accuracy and predicted classes. It is used for
+    #    validation each epoch and imported by evaluate.py for the test.
+    # Q: Why model.eval(), no_grad, and loss times batch size?
+    # A: eval mode turns dropout off and makes BatchNorm use its saved statistics, so results are stable. no_grad
+    #    saves memory. The criterion returns a batch mean, so multiplying by the batch size and dividing by N at the
+    #    end weights a smaller last batch correctly.
     # eval mode: dropout off, BatchNorm uses its running statistics. @torch.no_grad() saves memory and time.
     model.eval()
     total_loss, preds = 0.0, []
@@ -113,6 +179,12 @@ def run(cfg, resume=False):
     resume: if True and last.pt exists, continue from it (for example after a Kaggle disconnect).
     Returns {"best_val_acc", "last_epoch", "train_time_min"}.
     """
+    # Q: What does run do and why does it exist?
+    # A: It is the whole training procedure: set up data, model, optimizer, scheduler and losses, loop over epochs
+    #    with mini-batches, validate, log, save checkpoints, apply the stop rules. It returns a summary.
+    # Q: Why must resume use the same epochs, and why does last.pt store optimizer state?
+    # A: The cosine schedule depends on epochs (T_max), so the code raises ValueError if they differ. last.pt also
+    #    stores optimizer, scheduler and scaler state so training continues exactly where it stopped.
     # Seed first, so weight init, shuffling and augmentation are repeatable.
     set_seed(cfg["seed"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -248,6 +320,12 @@ def run(cfg, resume=False):
 
 def main():
     """Command-line entry point: read the flags, build the config, train, print the summary."""
+    # Q: What does main do and why does it exist?
+    # A: It is the command-line entry point: it reads the flags, builds the config with load_config, calls run and
+    #    prints the summary.
+    # Q: Why are most flags optional with no default?
+    # A: Their default is None, and load_config ignores None, so the YAML file (or DEFAULTS) supplies the value unless
+    #    a flag is given.
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)  # path to the YAML file
     ap.add_argument("--resume", action="store_true")  # flag: continue from last.pt

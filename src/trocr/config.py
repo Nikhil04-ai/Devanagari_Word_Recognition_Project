@@ -15,6 +15,41 @@ from types import SimpleNamespace
 # PyYAML reads the .yaml config files and also converts text like "1e-3" or "20" to numbers.
 import yaml
 
+# ======================================= CONCEPTS USED IN THIS FILE =======================================
+# YAML: a simple text format for settings ("epochs: 10"). Read in load_config from configs/trocr/*.yaml.
+# Hyper-parameter: a setting that we choose before training (learning rate, batch size...), not learned
+#     by the model. All of them are listed in DEFAULTS.
+# Config layering: defaults < YAML file < command-line overrides; the last one that sets a key wins.
+#     Done in load_config with cfg.update(...) twice.
+# SimpleNamespace: a tiny object whose attributes come from a dict, so we write cfg.epochs. Built at the end
+#     of load_config.
+# Command-line override (--set KEY=VALUE): changes one setting for one run without editing the YAML.
+#     Turned into a dict by parse_overrides.
+# Batch size / gradient accumulation: batch_size images per forward pass; gradients of grad_accum batches are
+#     added before one optimizer step, so effective batch = batch_size * grad_accum (see DEFAULTS).
+# Two learning rates: lr_pretrained (small, for pre-trained weights) and lr_new (large, for new random
+#     weights). They are used in train.make_optimizer; here they are only stored.
+# Warm-up / weight decay / gradient clipping: warmup_steps = lr rises slowly at the start; weight_decay = small
+#     penalty on big weights (AdamW); grad_clip = maximum gradient norm. All three are only stored here.
+# Early stopping (patience): stop if validation CER does not improve for `patience` epochs.
+# Beam search (num_beams): decoding that keeps several best partial words; used only by evaluate --decoding beam.
+# Seed: a fixed number that makes random choices repeatable (seed=42 in DEFAULTS).
+# Overfit test (overfit_n): train on a tiny set to prove the model can memorise it (a sanity check).
+# Checkpoint (ckpt_dir): a saved file of weights; to_dict stores the config inside it.
+# ==========================================================================================================
+
+# ======================================= FILE-LEVEL Q&A (VIVA) ============================================
+# Q: What part of the project is this file?
+# A: The settings loader of the TrOCR package. dataset.py, model.py, train.py and evaluate.py all get their
+#    hyper-parameters from the object returned by load_config, so every setting lives in one place.
+# Q: How is it used, and what does it read and write?
+# A: It is imported, not run. It reads an optional YAML file (for example configs/trocr/full.yaml) and a dict of
+#    overrides, and returns a SimpleNamespace. It writes nothing to disk.
+# Q: Why reject unknown keys?
+# A: A typo such as "epoch" instead of "epochs" would otherwise be ignored silently and the run would use the
+#    default value. load_config raises KeyError instead.
+# ==========================================================================================================
+
 # Default value of every allowed setting. A YAML file or an override may only use keys listed here
 # (unknown keys are rejected in load_config), so a typo in a config file cannot pass silently.
 DEFAULTS = dict(
@@ -60,6 +95,12 @@ def load_config(path=None, overrides=None):
     Inputs: `path` = YAML file path or None; `overrides` = dict of setting -> value or None.
     Returns: SimpleNamespace with every key of DEFAULTS as an attribute.
     Why: one function gives all other files the same, checked settings object."""
+    # Q: What does it do and why does it exist?
+    # A: It merges defaults, the YAML file and the overrides (later ones win), rejects unknown keys and
+    #    returns a namespace. All TrOCR files call it to get one checked settings object.
+    # Q: Why are None overrides ignored and unknown keys rejected?
+    # A: argparse gives None for flags the user did not pass; if None were applied it would erase the YAML or
+    #    default value. Unknown keys are rejected so a typo cannot pass silently.
     # Start from a copy so that the DEFAULTS dict itself is never changed.
     cfg = dict(DEFAULTS)
     if path:
@@ -82,6 +123,12 @@ def parse_overrides(items):
     Returns: dict of key -> value, where each value has the right Python type (int, float, bool, str).
     Why YAML typing: yaml.safe_load("1") gives the int 1 and yaml.safe_load("1e-3") gives a float,
     so we do not need our own number parsing."""
+    # Q: What does it do and why does it exist?
+    # A: It turns the --set strings ("epochs=1") into a dict with typed values, so load_config can use them
+    #    as overrides.
+    # Q: Why yaml.safe_load for the value, and why partition instead of split?
+    # A: safe_load already gives int, float, bool or str, so no own number parsing is needed. partition cuts
+    #    only at the first "=", so a value that contains "=" does not break.
     out = {}
     for item in items or []:
         # partition splits at the FIRST "=", so a value may itself contain "=".
@@ -93,4 +140,10 @@ def parse_overrides(items):
 def to_dict(cfg):
     """Config namespace -> plain dict. Used to store the config inside a checkpoint file
     (train.py) so that evaluate.py can rebuild the same model later."""
+    # Q: What does it do and why does it exist?
+    # A: It converts the config namespace back to a plain dict. train.py stores that dict inside every
+    #    checkpoint file.
+    # Q: Why store the config in the checkpoint?
+    # A: evaluate.py then rebuilds the model with the same settings it was trained with, even if the YAML file
+    #    was edited later. vars(cfg) is the namespace's attribute dict; dict() makes a copy.
     return dict(vars(cfg))

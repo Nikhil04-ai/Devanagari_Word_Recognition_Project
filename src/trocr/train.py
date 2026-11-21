@@ -38,6 +38,72 @@ from .config import load_config, parse_overrides, to_dict
 from .dataset import get_loaders
 from .model import build_model, count_params, generate_ids, new_param_names, set_encoder_trainable
 
+# ======================================= CONCEPTS USED IN THIS FILE =======================================
+# TrOCR: Transformer-based OCR from Microsoft: an image encoder plus a text decoder. This file trains it on
+#     IIIT-HW-Dev word images, starting from pre-trained weights (build_model in run).
+# Encoder-decoder: the encoder turns the image into features, the decoder writes the word from them, one
+#     character at a time (see model.py). Fine-tuning here means continuing to train both parts on our data.
+# Teacher forcing: while training, the decoder is given the TRUE previous characters, not its own guesses.
+#     model(pixel_values=px, labels=labels) in run and in evaluate_loader (with_loss) does this.
+# Cross-entropy loss and -100 labels: the loss compares the predicted character scores with the true character.
+#     Padding positions are labelled -100 and are ignored. The model returns it as `.loss`.
+# Greedy generation: at test time the model writes the word itself, taking the most likely character each step
+#     (generate_ids with num_beams = 1). Used to score the validation set in evaluate_loader.
+# CER (character error rate): edit distance divided by number of true characters; lower is better. WER (word error
+#     rate): same, counted over words. Both come from src/common/metrics.py and are computed in evaluate_loader.
+# AdamW: the optimizer that updates the weights from their gradients; weight_decay is a small pull of weights
+#     towards zero (cfg.weight_decay). Built in make_optimizer.
+# Two learning rates: pre-trained weights get a small lr (lr_pretrained), new random weights get a larger one
+#     (lr_new). Done with two parameter groups in make_optimizer.
+# Learning-rate scheduler (LambdaLR): changes the learning rate during training with our own function f.
+# Warm-up: the lr rises linearly from almost 0 to its full value in the first steps (make_scheduler). It is capped
+#     at 10% of all steps in run.
+# Cosine decay: after warm-up the lr falls along a cosine curve to 0, so the last steps are small (make_scheduler).
+# Epoch, batch, step: an epoch is one pass over the training data; a batch is a group of images; a (optimizer) step
+#     is one weight update. The lr schedule counts optimizer steps.
+# Gradient accumulation: gradients of cfg.grad_accum batches are added up before one weight update, which acts
+#     like a bigger batch. The loss is divided by grad_accum so the sum is an average (see run).
+# fp16 / mixed precision / autocast: half-precision math on the GPU, faster and lighter. torch.autocast switches
+#     it on; `amp` is True only on a GPU.
+# GradScaler: multiplies the loss by a large number before backward so tiny fp16 gradients do not become zero
+#     (underflow). unscale_() undoes it, step() and update() apply it. Does nothing when amp is off.
+# Gradient clipping: if the total gradient norm is above cfg.grad_clip, all gradients are scaled down. This guards
+#     against exploding gradients (clip_grad_norm_ in run).
+# NaN / inf loss skip: a batch with a non-finite loss is skipped (torch.isfinite) so it cannot damage the weights.
+# Freezing the encoder: requires_grad = False stops it from learning (set_encoder_trainable). cfg.freeze_encoder_epochs
+#     sets how many first epochs are decoder-only; model.encoder.eval() also keeps its dropout off.
+# train() / eval() and dropout: train() switches dropout (random switching-off of units) on; eval() switches it off so
+#     validation is repeatable. @torch.no_grad() stops gradient tracking when only predicting.
+# Validation set: images not used for learning; scored after every epoch to see real progress and choose the model.
+# Checkpoint: a saved file with the weights and more. best.pt = weights of the best epoch; last.pt = latest epoch plus
+#     optimizer, scheduler and scaler state.
+# Best-epoch selection: the epoch with the lowest validation CER is saved as best.pt (variables improved, best_cer).
+# Early stopping / patience: stop if validation CER did not improve for cfg.patience epochs in a row (`bad`).
+# Time budget (max_minutes): training stops cleanly when this many minutes are used; minutes() counts them.
+# Resume: --resume reloads last.pt (weights, optimizer, scheduler, scaler, counters) and continues from the next epoch.
+# Overfit test: with overfit_n > 0 the model trains on a few images only; reaching CER 0 shows the code can learn.
+# Seed: set_seed(cfg.seed) fixes the random number generators so a run can be repeated.
+# log.csv: one row per epoch (losses, CER, WER, lr, minutes), used later to plot training curves.
+# set_to_none=True in zero_grad: frees the gradient memory instead of filling it with zeros.
+# non_blocking=True: lets the copy of data to the GPU overlap with other work.
+# argparse / overrides: command-line options replace the matching keys of the YAML config (main).
+# ==========================================================================================================
+
+# ======================================= FILE-LEVEL Q&A (VIVA) ============================================
+# Q: What does this file do?
+# A: It trains the TrOCR-style model with a plain PyTorch loop. After every epoch it scores the validation set
+#    with CER / WER, writes a log line and saves checkpoints. evaluate.py later tests best.pt on the test set.
+# Q: How is it run?
+# A: From the repository root: python -m src.trocr.train --config configs/trocr/full.yaml
+#    Use configs/trocr/overfit.yaml for the sanity check and add --resume to continue after a disconnect.
+# Q: What does it read and what does it write?
+# A: It reads the YAML config (plus command-line overrides) and the train / val CSV files and images through
+#    get_loaders. It writes best.pt, last.pt and log.csv into cfg.ckpt_dir and prints progress to the screen.
+# Q: Why is evaluate_loader in this file and also used by evaluate.py?
+# A: Validation after each epoch and the final test need the same job (generate words, compute CER and WER), so
+#    it is written once here and imported by evaluate.py.
+# ==========================================================================================================
+
 
 def make_optimizer(model, cfg):
     """AdamW with two parameter groups: new embeddings/head (lr_new) vs pre-trained (lr_pretrained).
@@ -45,6 +111,12 @@ def make_optimizer(model, cfg):
     Input: model, cfg. Returns: a torch AdamW optimizer.
     Why two learning rates: the pre-trained weights are already good, so a big step could damage
     them; the new random weights start from nothing and need a bigger step to learn quickly."""
+    # Q: What does it do and why does it exist?
+    # A: It builds the AdamW optimizer with two groups of parameters, each with its own learning rate. run calls it
+    #    once before training starts.
+    # Q: Why are frozen parameters also put in the groups, and why are empty groups removed?
+    # A: The optimizer is built once, but set_encoder_trainable changes requires_grad later; a frozen parameter just
+    #    gets no gradient and is not updated. AdamW raises an error for a group with no parameters.
     # Names of the randomly initialised (new) parameters; everything else is pre-trained.
     new_names = new_param_names(model, cfg)
     new, old = [], []
@@ -64,7 +136,20 @@ def make_scheduler(opt, warmup, total):
     Why warm-up: at the start the new layers are random and gradients are noisy, so a gentle start
     makes training more stable. Why cosine decay: the lr falls smoothly, so the last steps are small
     and fine-tune the weights."""
+    # Q: What does it do and why does it exist?
+    # A: It makes the learning-rate schedule: a short linear warm-up, then a cosine fall to 0. run creates it
+    #    and calls sched.step() after every optimizer update.
+    # Q: Why are `warmup` and `total` counted in optimizer steps and not in batches?
+    # A: sched.step() is called once per optimizer update, which happens every grad_accum batches. If the numbers
+    #    were in batches, the schedule would reach its end grad_accum times too early.
     def f(step):
+        # Q: What does it do and why does it exist?
+        # A: It returns the factor (0 to 1) that LambdaLR multiplies with each group's base learning rate at this
+        #    step. It is the whole warm-up plus cosine shape of the schedule.
+        # Q: Why (step + 1), max(1, ...) and min(1.0, prog)?
+        # A: (step + 1) makes the very first step use a small non-zero lr instead of exactly 0. max(1, ...) avoids
+        #    division by zero when warmup or the decay phase has length 0. min(1.0, prog) stops the cosine from
+        #    going up again if the step count goes beyond `total`.
         # Warm-up: factor grows linearly from 1/warmup up to 1.
         if step < warmup:
             return (step + 1) / max(1, warmup)
@@ -84,6 +169,13 @@ def evaluate_loader(model, loader, tok, cfg, device, amp, num_beams=1, with_loss
     Returns: loss (mean over batches), cer, wer, and lists refs (true words), hyps (predicted words), paths.
     Why greedy by default: it is fast, so it is used for validation after each epoch.
     @torch.no_grad(): no gradients are needed, which saves memory and time."""
+    # Q: What does it do and why does it exist?
+    # A: It runs the model over a whole DataLoader without learning: it generates a word for every image, then
+    #    returns CER, WER and the texts. run uses it for validation after each epoch; evaluate.py uses it for the test.
+    # Q: Why is the loss computed by teacher forcing but the words by generation?
+    # A: The teacher-forced loss shows how well the model predicts each character when it is given the true
+    #    previous ones. The generated words are what the model really writes alone, so CER and WER come from them.
+    #    Skipping non-finite losses stops one bad batch from ruining the average loss.
     # eval() switches dropout off so results are repeatable.
     model.eval()
     refs, hyps, paths, tot_loss, n_batches = [], [], [], 0.0, 0
@@ -113,6 +205,12 @@ def evaluate_loader(model, loader, tok, cfg, device, amp, num_beams=1, with_loss
 def run(cfg, resume=False):
     """Full training run. Inputs: cfg (config namespace), resume (continue from last.pt if it exists).
     Returns: dict with best_cer, last_epoch and train_time_min."""
+    # Q: What does it do and why does it exist?
+    # A: It is the whole training procedure: build data, model, optimizer and scheduler; loop over epochs with
+    #    forward, backward and update; validate, log and save checkpoints; stop on time, patience or overfit success.
+    # Q: Why does last.pt hold optimizer, scheduler and scaler, and why must total_steps match on resume?
+    # A: To continue exactly where it stopped, Adam's moments, the lr position and the fp16 scale are needed, not only
+    #    the weights. The lr schedule was built for a fixed number of steps; a different total would give a wrong lr.
     # Fix random seeds so that the run can be repeated.
     set_seed(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -258,6 +356,12 @@ def run(cfg, resume=False):
 def main():
     """Command-line entry point: read the options, build the config and call run().
     Each option overrides the same key from the YAML file; `--set KEY=VALUE` can change any other key."""
+    # Q: What does it do and why does it exist?
+    # A: It is the command-line entry point. It reads the options, merges them with the YAML config through
+    #    load_config, calls run and prints the returned summary dict.
+    # Q: Why keep only the options whose value is not None?
+    # A: An option the user did not give is None. Passing it on would overwrite the YAML value with None.
+    #    Only options that were really typed (and the --set pairs) override the file.
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True)
     ap.add_argument("--resume", action="store_true")

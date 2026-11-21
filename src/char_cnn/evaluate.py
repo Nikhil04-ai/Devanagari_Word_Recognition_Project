@@ -33,6 +33,45 @@ from .model import CharCNN, count_params
 # Reuse the validation function from train.py instead of writing a second one.
 from .train import evaluate
 
+# CONCEPTS USED IN THIS FILE
+# - Test set: the official DHCD Test split (300 images per class). The model never saw it in training or when choosing
+#   the epoch, so accuracy on it is an honest estimate. Loaded in main.
+# - Accuracy: share of images classified correctly. Taken from the shared save_results writer.
+# - Confusion matrix: a table where cell [i, j] counts images of true class i predicted as class j. Built by
+#   confusion; the diagonal is the correct predictions.
+# - Row normalisation: each row is divided by its total so every cell is a share of that true class, making classes
+#   comparable. Used in the confusion_matrix.png plot.
+# - Precision, recall, F1, support: precision = of the images predicted as a class, how many were right; recall = of
+#   the true images of a class, how many were found; F1 = harmonic mean of the two; support = number of true images.
+#   Computed in per_class_scores.
+# - Macro-F1: the plain average of the 46 per-class F1 scores, so every class counts the same. Stored in metrics.json.
+# - CER / WER: character and word error rates between reference and predicted text. They are computed inside
+#   save_results from the strings built in main; here each text is one character.
+# - Logits and argmax: the model gives 46 scores; the index of the largest is the predicted class (done inside
+#   train.evaluate).
+# - Checkpoint / state_dict: the saved .pt file with the weights and settings; load_checkpoint rebuilds the model from
+#   it and sets eval mode.
+# - Latency (ms per image): time to classify one image. ms_per_image times it after a warm-up, with cuda synchronize
+#   on GPU because GPU work is asynchronous.
+# - Learning curve and overfitting: train vs validation loss / accuracy per epoch, read from log.csv. A growing gap
+#   means overfitting. Drawn in save_figures.
+# - Unicode code points and fonts: some characters use several code points, so CER is not exactly 1 - accuracy.
+#   matplotlib needs a Devanagari font to draw the labels (plot_labels).
+# - matplotlib 'Agg' backend: draws straight to image files with no window, so it works on servers and Kaggle.
+
+# FILE Q&A (viva)
+# Q: What part of the project is this file?
+# A: The final test of Model A: it measures the best checkpoint once on the Test split and writes metrics, tables and
+#    figures.
+# Q: How is it run?
+# A: From the repo root: python -m src.char_cnn.evaluate --ckpt checkpoints/char_cnn_full/best.pt. Optional flags:
+#    --data_dir, --run_name, --no_figures.
+# Q: What does it read and write?
+# A: It reads the checkpoint, the Test split, and log.csv next to the checkpoint. It writes into results/<run_name>/:
+#    test_predictions.csv and metrics.json (save_results), per_class.csv, confused_pairs.csv, and the PNG figures.
+# Q: Why run it only once?
+# A: If you tune the model after looking at Test results, the Test split stops being a fair final check.
+
 # Default name of the results folder: <model>_<subset>_<decoding> (project naming convention).
 RUN_NAME = "char_cnn_full_argmax"
 
@@ -43,6 +82,12 @@ def load_checkpoint(path, device):
     path: .pt file made by train.py. device: torch.device to put the model on.
     Returns (model in eval mode, the full checkpoint dict).
     """
+    # Q: What does load_checkpoint do and why does it exist?
+    # A: It rebuilds CharCNN from a .pt file made by train.py, loads the weights and sets eval mode. It returns the
+    #    model and the full checkpoint dict.
+    # Q: Why use the dropout from the saved config, and why weights_only=False?
+    # A: load_state_dict needs the same architecture, so the saved setting is used (0.4 if an old checkpoint has
+    #    none). weights_only=False because the file also holds plain Python objects (cfg, chars).
     # weights_only=False because the checkpoint also has plain Python objects (cfg, chars).
     ck = torch.load(path, map_location=device, weights_only=False)
     # The architecture must match the saved weights, so use the dropout from the saved config
@@ -59,6 +104,12 @@ def confusion(y_true, y_pred, n=NUM_CLASSES):
     y_true, y_pred: integer numpy arrays of the same length. n: number of classes.
     Returns an (n, n) int64 array. The diagonal holds the correct predictions.
     """
+    # Q: What does confusion do and why does it exist?
+    # A: It builds the n x n confusion matrix: cm[i, j] counts true class i predicted as j. It is the base for per-
+    #    class scores, the top mistakes and the plot.
+    # Q: Why np.add.at and not cm[y_true, y_pred] += 1?
+    # A: With fancy indexing a repeated (true, pred) pair is counted only once. np.add.at adds 1 for every pair, so
+    #    repeats are counted correctly.
     cm = np.zeros((n, n), dtype=np.int64)
     # add.at adds 1 at every (true, pred) pair, and counts repeated pairs correctly
     # (plain cm[y_true, y_pred] += 1 would count a repeated pair only once).
@@ -75,6 +126,12 @@ def per_class_scores(cm):
     F1        = harmonic mean of precision and recall.
     support   = number of true images of the class.
     """
+    # Q: What does per_class_scores do and why does it exist?
+    # A: It computes precision, recall, F1 and support for each class from the confusion matrix. The F1 values give
+    #    the macro-F1 and the per_class.csv table.
+    # Q: Why np.divide with where=, and why rows as true classes?
+    # A: A class with no predictions or no samples would divide by zero; where= gives 0 instead. Rows are true
+    #    classes, so row sums are the support and column sums are the predicted counts.
     tp = np.diag(cm).astype(float)  # true positives: correct predictions per class
     support = cm.sum(1)  # row sums = true images per class
     predicted = cm.sum(0)  # column sums = images predicted as each class
@@ -91,6 +148,12 @@ def top_confusions(cm, k=10):
 
     Only real mistakes count (the diagonal is removed), and pairs with count 0 are dropped.
     """
+    # Q: What does top_confusions do and why does it exist?
+    # A: It returns the k most frequent mistakes as (true, predicted, count). They show which characters the model
+    #    mixes up.
+    # Q: Why zero the diagonal and drop zero counts?
+    # A: The diagonal holds correct predictions, and we only want mistakes. Pairs with count 0 are not mistakes, so
+    #    they are removed from the list.
     off = cm.copy()
     np.fill_diagonal(off, 0)  # remove the correct predictions, keep only mistakes
     # argsort on the flattened matrix (axis=None), reversed = biggest first, take k.
@@ -107,6 +170,12 @@ def ms_per_image(model, x_uint8, device, n=200, warmup=10):
     Returns milliseconds per image (float).
     Why warmup: the first runs are slower (GPU start-up, caches), which would distort the average.
     """
+    # Q: What does ms_per_image do and why does it exist?
+    # A: It measures the average time to classify one image (batch size 1). It is stored in metrics.json as the speed
+    #    of the model.
+    # Q: Why warm-up runs and cuda synchronize?
+    # A: The first runs are slower (GPU start-up, caches) and would distort the average. GPU work is asynchronous, so
+    #    synchronize makes the clock start and stop when the GPU is really finished.
     # Prepare all inputs first so data preparation is not part of the timing.
     xs = [to_input(x_uint8[i:i + 1].to(device)) for i in range(min(n + warmup, len(x_uint8)))]
     for x in xs[:warmup]:
@@ -128,6 +197,12 @@ def plot_labels():
 
     Returns (list of 46 labels, font name or None).
     Why: matplotlib's default font cannot draw Devanagari, so we need an installed font that can.
+    # Q: What does plot_labels do and why does it exist?
+    # A: It returns the tick labels for the plots: Devanagari characters if a suitable font is installed, otherwise
+    #    romanised folder names. It also returns the font name or None.
+    # Q: Why is there a fallback?
+    # A: matplotlib's default font cannot draw Devanagari. Without a fallback the labels would not show correctly, so
+    #    the folder names (like 'ka') are used instead.
     """
     from matplotlib import font_manager
 
@@ -146,6 +221,12 @@ def save_figures(out, cm, pairs, x_test, y_test, log_csv):
     x_test: dict {"images": uint8 array (N,32,32), "pred": predicted class array (N,)}.
     y_test: true class array (N,). log_csv: path of the training log (may not exist).
     """
+    # Q: What does save_figures do and why does it exist?
+    # A: It draws and saves the confusion matrix, the picture of the most confused pairs, and the learning curve (only
+    #    if log.csv exists). These are the report figures.
+    # Q: Why the Agg backend, plt.close, and row normalisation?
+    # A: Agg draws to files without a window, so it works on servers; plt.close frees memory after each figure. Rows
+    #    are normalised so each cell is a share of its true class and classes are comparable.
     import matplotlib
 
     matplotlib.use("Agg")  # draw to files only, no window (works on servers and Kaggle)
@@ -216,6 +297,12 @@ def save_figures(out, cm, pairs, x_test, y_test, log_csv):
 
 def main():
     """Command-line entry point: load the checkpoint, test it, write all result files."""
+    # Q: What does main do and why does it exist?
+    # A: It is the command-line entry point: load the checkpoint, run the model on the Test split, compute metrics,
+    #    write all result files and print a summary.
+    # Q: Why convert class indices to characters before save_results?
+    # A: save_results computes text metrics (CER / WER) from strings, so it needs Devanagari strings, not class
+    #    numbers. Extra fields such as macro-F1 are added to metrics.json through `extra`.
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default="checkpoints/char_cnn_full/best.pt")
     ap.add_argument("--data_dir", help="defaults to the data_dir stored in the checkpoint")

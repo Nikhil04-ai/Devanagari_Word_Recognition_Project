@@ -36,6 +36,51 @@ from .dataset import CharVocab, WordDataset, collate_fn
 from .decode import greedy_decode
 from .model import CRNN, count_params
 
+# ===== CONCEPTS USED IN THIS FILE =====
+# CRNN: the CNN + BiLSTM network from model.py that is trained here. It outputs one class score set per column.
+# CTC loss (nn.CTCLoss): compares the per-column predictions with the true label without needing letter positions.
+#    It sums over all valid alignments. Used as `ctc` in run() and evaluate_loader().
+# Blank symbol: class 0, "no character here". CTCLoss(blank=CharVocab.BLANK) tells the loss which class it is.
+# zero_infinity: if a label cannot fit in the time steps the loss would be inf; this turns it into 0 loss and
+#    0 gradient so training does not break.
+# Time steps and out_lens: columns after the CNN (width // 4). CTC gets the valid number per image, so padding is ignored.
+# Greedy decoding: best class per step, merge repeats, drop blanks (decode.py). Used to get text for CER and WER.
+# CER / WER: character and word error rate from metrics.py. CER on the validation set picks the best model.
+# Epoch, batch: one epoch = one pass over all training data; a batch = the group of images used for one update.
+# Training / validation set: training data changes the weights; validation data only measures progress.
+# AdamW: an optimiser (Adam) with weight decay applied separately from the gradient step. Built as `opt`.
+# Weight decay: a small push that shrinks weights, to reduce overfitting (weight_decay in the config).
+# Learning rate and one-cycle schedule: lr rises to its peak over the first 15% of steps (pct_start=0.15), then
+#    falls towards zero. OneCycleLR is stepped once per batch, so it needs total_steps.
+# Gradient clipping: if the total gradient norm is above grad_clip, it is scaled down, so one bad batch cannot
+#    cause a huge weight update (clip_grad_norm_).
+# fp16 / mixed precision (autocast, GradScaler): the forward pass uses 16-bit numbers on a GPU for speed and
+#    memory. GradScaler scales the loss so small fp16 gradients do not become zero. CTC loss stays float32.
+# Seed: set_seed(cfg["seed"]) makes random choices repeatable (src/common/seed.py).
+# Early stopping and patience: stop when val CER has not improved for `patience` epochs.
+# Checkpoint (best.pt, last.pt): saved model files. best.pt = best val CER. last.pt also stores optimiser,
+#    scheduler and scaler so --resume continues exactly.
+# Resume: continue training from last.pt after an interruption (for example a Kaggle disconnect).
+# Overfit test (overfit_n): train and test on a few samples; a correct model and loss must reach CER 0.
+# model.train() / model.eval() / torch.no_grad(): dropout and BatchNorm behave differently in training and
+#    evaluation; no_grad saves memory when no backward pass is needed.
+# DataLoader / collate_fn / shuffle / pin_memory / num_workers: batching tools. See dataset.py.
+# YAML config and argparse: settings in a YAML file, overridden by command-line flags (load_config, main).
+# CSV log (log.csv): one row per epoch with loss, CER, WER, learning rate and time, used for the training curve.
+# state_dict: the dictionary of a model's (or optimiser's) values, which is what torch.save stores.
+
+# ===== VIVA Q&A FOR THIS FILE =====
+# Q: What part of the project is this file?
+# A: Training of the CRNN-CTC word recogniser: it trains on the train CSV, validates each epoch and saves checkpoints.
+# Q: How is it run?
+# A: From the repo root: python -m src.crnn.train --config configs/crnn/full.yaml (add --resume to continue).
+# Q: What does it read and write?
+# A: It reads the config YAML, vocab.txt, the train and val CSVs with their images, and last.pt when resuming.
+#    It writes best.pt, last.pt and log.csv into the checkpoint folder, and prints progress.
+# Q: How is the best model chosen and when does training stop?
+# A: The best model is the one with the lowest validation CER. Training stops at the last epoch, on early
+#    stopping (patience), when max_minutes is used up, or when the overfit test reaches CER 0.
+
 # Default settings. A YAML config file and command-line flags override these (see load_config).
 DEFAULTS = dict(
     # Where the data is: folder with the CSVs and vocab.txt, the CSV names, and the folder that
@@ -59,7 +104,13 @@ def load_config(path=None, **overrides):
     path: YAML file path or None. overrides: keyword values; a value of None means "not given" and is ignored,
     so command-line flags that the user did not set do not erase the YAML values.
     """
-    cfg = dict(DEFAULTS)  # copy, so DEFAULTS itself is never changed
+    # Q: What does it do and why does it exist?
+    # A: It builds the one settings dict that run() uses, by layering DEFAULTS, then the YAML file, then the
+    #    command-line overrides. This way every setting has a value and can be changed without editing code.
+    # Q: Why dict(DEFAULTS) and why ignore None overrides?
+    # A: dict() makes a copy, so DEFAULTS is not changed by update(). A flag the user did not type is None;
+    #    if it were applied it would erase the value from the YAML file.
+    cfg = dict(DEFAULTS) # copy, so DEFAULTS itself is never changed
     if path:
         with open(path, encoding="utf-8") as f:
             cfg.update(yaml.safe_load(f) or {})  # "or {}" handles an empty YAML file
@@ -69,6 +120,12 @@ def load_config(path=None, **overrides):
 
 def make_datasets(cfg, vocab):
     """Build the train and validation WordDatasets from the config. Returns (train, val)."""
+    # Q: What does it do and why does it exist?
+    # A: It creates the train and validation WordDatasets from the CSVs named in the config, and applies the
+    #    overfit_n or val_limit option by cutting the sample lists.
+    # Q: Why is val set to the train samples in overfit mode?
+    # A: The overfit test checks that the model and loss can memorise a few samples. Scoring on the same
+    #    samples shows whether it learned them. If CER cannot reach 0, there is a bug in the model or loss.
     d = cfg["data_dir"]
     train = WordDataset(os.path.join(d, cfg["train_csv"]), vocab, root=cfg["image_root"], invert=cfg["invert"])
     val = WordDataset(os.path.join(d, cfg["val_csv"]), vocab, root=cfg["image_root"], invert=cfg["invert"])
@@ -90,6 +147,12 @@ def evaluate_loader(model, loader, vocab, device, ctc):
     Returns a dict with loss (mean over batches), cer, wer, and the lists refs, hyps, paths
     (true texts, predicted texts, image paths). Also used by evaluate.py for the final test.
     """
+    # Q: What does it do and why does it exist?
+    # A: It runs the model over a whole DataLoader without training, decodes the predictions to text and returns
+    #    the loss, CER and WER. train.py uses it after every epoch and evaluate.py uses it for the test set.
+    # Q: Why model.eval(), @torch.no_grad() and skipping non-finite losses?
+    # A: eval() turns off dropout and makes BatchNorm use stored statistics, so results are stable. no_grad saves
+    #    memory because there is no backward pass. An inf or NaN loss would spoil the average, so it is skipped.
     model.eval()  # turns off dropout and makes BatchNorm use its stored running statistics
     total_loss, n_batches, refs, hyps, paths = 0.0, 0, [], [], []
     for batch in loader:
@@ -114,6 +177,13 @@ def run(cfg, resume=False):
     Returns a dict: best_cer (best validation CER), last_epoch (last finished epoch),
     train_time_min (total training minutes, including time before a resume).
     """
+    # Q: What does it do and why does it exist?
+    # A: It is the whole training procedure: set the seed, build data, model, AdamW, one-cycle schedule and CTC
+    #    loss, then loop over epochs (train, validate, log, save checkpoints, check stop rules).
+    # Q: Why is the loss computed outside autocast, and why is a resume refused when total_steps differs?
+    # A: CTC sums many small probabilities, so it is computed in float32 for accuracy. The saved one-cycle
+    #    schedule was built for a fixed number of steps, so a different epoch count or data size would put
+    #    the learning rate on the wrong point of the curve.
     set_seed(cfg["seed"])
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     use_amp = device.type == "cuda"  # mixed precision (fp16) only works on a GPU here
@@ -257,7 +327,13 @@ def run(cfg, resume=False):
 
 def main():
     """Command-line entry point: read flags, build the config and call run()."""
-    ap = argparse.ArgumentParser()
+    # Q: What does it do and why does it exist?
+    # A: It is what runs when you type python -m src.crnn.train. It reads the command-line flags, builds the
+    #    config with load_config and starts run(), then prints the result dict.
+    # Q: Why do the optional flags have no default value?
+    # A: Their default is None, which load_config ignores. So only the flags you really type override the
+    #    YAML file, and the other settings stay as in the config.
+    ap =argparse.ArgumentParser()
     ap.add_argument("--config", required=True)  # YAML file with the base settings
     ap.add_argument("--resume", action="store_true")
     # The flags below are optional. Any flag that is left out is None and does not override the config.

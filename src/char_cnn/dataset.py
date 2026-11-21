@@ -29,6 +29,43 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+# CONCEPTS USED IN THIS FILE
+# - DHCD: the UCI Devanagari Handwritten Character Dataset. 46 classes (36 consonants + 10 digits), 32x32 grayscale
+#   PNGs. Read by load_split.
+# - Class index <-> character: CLASS_TO_CHAR maps a folder name to a Devanagari character; CLASSES and CHARS are lists
+#   in alphabet order, so the network's output number i means CLASSES[i].
+# - uint8 grayscale image: pixel values 0..255, one byte each. Images are stored as uint8 tensors to save memory and
+#   made float only in to_input.
+# - Cache (.npz): a numpy file written on the first load (_finish) so later runs read one file instead of 92,000 PNGs.
+# - Train / validation / test: Train is used to learn, a validation part cut from Train (stratified_split) chooses the
+#   best epoch, and the official Test split is kept for the final check.
+# - Stratified split: a split that keeps the same class share in each part. stratified_split takes the same fraction
+#   from every class.
+# - Seed: a fixed number that starts the random generator, so the split (np.random.default_rng(seed)) is the same on
+#   every run.
+# - Normalisation: (x - MEAN) / STD gives inputs with about zero mean and unit spread, which trains more steadily.
+#   Done in to_input.
+# - Tensor shape (N, 1, H, W): N images, 1 channel, height, width. Conv2d needs the channel dimension, which to_input
+#   adds with unsqueeze(1).
+# - int64 labels: class numbers stored as 64-bit integers, the type CrossEntropyLoss expects. Made in _finish.
+# - Data augmentation: small random changes to training images (rotate, shift, scale, shear) so the model sees more
+#   handwriting variety and overfits less. Done by random_affine; never a flip.
+# - Affine transform: a 2x3 matrix that rotates / shifts / scales / shears an image. affine_grid builds the sampling
+#   grid from it and grid_sample reads the pixels (bilinear interpolation) in random_affine.
+# - Unicode conjunct characters: a few classes (for example the one for ksha) are several code points in one
+#   character; they are plain strings in CLASS_TO_CHAR.
+
+# FILE Q&A (viva)
+# Q: What part of the project is this file?
+# A: The data layer of Model A: it loads DHCD into tensors, defines the class list, makes the train / validation
+#    split, normalises pixels and augments images.
+# Q: How is it run?
+# A: It is not run on its own. train.py, evaluate.py and predict.py import from it, so every stage uses the same class
+#    order and the same normalisation.
+# Q: What does it read and write?
+# A: It reads the DHCD PNG folders or the UCI zip in data/raw/dhcd (load_split). It writes only the cache files
+#    cache_train.npz / cache_test.npz in that folder.
+
 # Class folder -> Devanagari character. The folder names come from the dataset itself
 # (verified from the UCI zip). The numbers follow the order of the Devanagari alphabet.
 CLASS_TO_CHAR = {
@@ -65,6 +102,12 @@ def find_split_dir(data_dir, split):
     DevanagariHandwrittenCharacterDataset folder, so we try both places.
     Raises FileNotFoundError if neither exists.
     """
+    # Q: What does find_split_dir do and why does it exist?
+    # A: It returns the folder that holds the class sub-folders for 'Train' or 'Test'. The data can be unzipped
+    #    directly in data_dir or inside DevanagariHandwrittenCharacterDataset, so it tries both.
+    # Q: Why does it raise FileNotFoundError instead of returning None?
+    # A: load_split catches that error to fall back to the zip file. If there is no zip either, the original error is
+    #    re-raised and its message tells the user to unzip the data.
     # Try the two known layouts in order and return the first folder that exists.
     for cand in (os.path.join(data_dir, split),
                  os.path.join(data_dir, "DevanagariHandwrittenCharacterDataset", split)):
@@ -79,6 +122,11 @@ def find_zip(data_dir):
 
     Returns the path of the first .zip file (sorted by name), or None if there is no zip.
     """
+    # Q: What does find_zip do and why does it exist?
+    # A: It returns the path of the first .zip file in data_dir, or None. Reading one zip is much faster than 92,000
+    #    separate files on Windows.
+    # Q: Why is the listing sorted?
+    # A: os.listdir gives no guaranteed order. sorted() makes the same zip get chosen on every machine.
     if os.path.isdir(data_dir):
         # sorted() makes the choice the same on every machine.
         for name in sorted(os.listdir(data_dir)):
@@ -94,6 +142,13 @@ def _load_from_zip(zip_path, split):
     Returns three lists, sorted by class index: images (each uint8 array 32x32),
     labels (int class indices), paths (strings like "<zip>/<name inside zip>").
     """
+    # Q: What does _load_from_zip do and why does it exist?
+    # A: It reads all PNGs of one split straight out of the zip (no unzipping) and returns images, labels and paths.
+    #    It lets users drop the UCI zip in the data folder and run.
+    # Q: Why does it sort by label at the end, and why raise on an unknown class folder?
+    # A: A stable sort by class gives the same order as the folder loader in load_split, so both routes make identical
+    #    data. An unknown folder means the dataset is not what we expect, so it stops loudly instead of giving wrong
+    #    labels.
     # Imports here because they are only needed on this path.
     import io
     import zipfile
@@ -133,6 +188,13 @@ def load_split(data_dir, split, use_cache=True):
     Order of tries: 1) the cache file, 2) unzipped folders, 3) the zip.
     use_cache: if True, read the cache when present and write it after a first load.
     """
+    # Q: What does load_split do and why does it exist?
+    # A: It loads a whole split as tensors (images, labels, paths). It tries the cache file first, then the unzipped
+    #    folders, then the zip, and writes the cache after a first load.
+    # Q: Why are labels taken from the CLASSES order, and why use a cache?
+    # A: The label is the position in CLASSES, so the network's output number maps back to the right character; a
+    #    different order would print wrong characters. The cache avoids reading 92,000 files every run;
+    #    allow_pickle=False because it holds only plain arrays.
     # Cache file name, e.g. cache_train.npz. Loading it takes seconds instead of reading 92,000 files.
     cache = os.path.join(data_dir, f"cache_{split.lower()}.npz")
     if use_cache and os.path.exists(cache):
@@ -179,6 +241,12 @@ def _finish(images, labels, paths, cache):
     cache: file path to write, or None for no cache.
     Returns (images uint8 [N,32,32], labels int64 [N], paths list).
     """
+    # Q: What does _finish do and why does it exist?
+    # A: It turns the lists into numpy arrays, optionally saves the cache, and returns torch tensors. Both loading
+    #    routes in load_split end here, so the code is written once.
+    # Q: Why are labels int64 and images left as uint8?
+    # A: CrossEntropyLoss expects int64 class indices. Images stay uint8 (1 byte per pixel) to save memory; they
+    #    become float per batch in to_input.
     images = np.stack(images)  # list of N arrays (32,32) -> one array (N,32,32)
     labels = np.asarray(labels, dtype=np.int64)  # int64 is the label type CrossEntropyLoss expects
     if cache:
@@ -196,6 +264,13 @@ def stratified_split(labels, val_fraction=0.1, seed=42):
     Why stratified: a plain random split could give a class too few validation images.
     Why a validation set: we choose the best epoch and stop early with it, so the Test split stays untouched.
     """
+    # Q: What does stratified_split do and why does it exist?
+    # A: It splits image indices into train and validation so each class gives the same share (val_fraction) to
+    #    validation. The validation set picks the best epoch, so the Test split stays untouched.
+    # Q: Why a fixed seed and a per-class loop?
+    # A: The loop shuffles inside each class and takes the same share from each, so no class is missing in validation.
+    #    The seed gives the same split every run; with a different split after --resume, validation images could end
+    #    up in training.
     # A fixed seed gives the same split every run, so results can be compared and repeated.
     g = np.random.default_rng(seed)
     labels = np.asarray(labels)
@@ -216,6 +291,12 @@ def to_input(images_uint8):
     Steps: to float, scale 0..255 to 0..1, add a channel dimension, then (x - MEAN) / STD.
     The channel dimension is needed because Conv2d expects (batch, channels, height, width).
     """
+    # Q: What does to_input do and why does it exist?
+    # A: It turns a uint8 batch (N, 32, 32) into a normalised float batch (N, 1, 32, 32). It is used for training,
+    #    validation, test and prediction.
+    # Q: Why is one shared function used, and why unsqueeze(1)?
+    # A: Using the same preprocessing everywhere means the model sees at prediction the same kind of input as in
+    #    training. unsqueeze(1) adds the channel dimension that Conv2d requires.
     # .float() makes float32; div_(255.0) is in place (no extra memory); unsqueeze(1): (N,32,32) -> (N,1,32,32).
     x = images_uint8.float().div_(255.0).unsqueeze(1)
     return (x - MEAN) / STD
@@ -233,6 +314,13 @@ def random_affine(x, degrees=10.0, translate=0.1, scale=(0.9, 1.1), shear=5.0):
     Why augment: handwriting varies; small random changes make the model see more variety
     and overfit less. Each image gets its own random numbers.
     """
+    # Q: What does random_affine do and why does it exist?
+    # A: It applies a random rotation, shift, scale and shear to every image of a batch at once on the GPU, using one
+    #    2x3 matrix per image. It is the training augmentation.
+    # Q: Why subtract the background before grid_sample, and why no flip?
+    # A: grid_sample fills outside pixels with 0, which is grey after normalisation, not black. Shifting so the black
+    #    background is 0, resampling, then shifting back keeps new borders black. A mirrored character is a different
+    #    shape, so flips are not used.
     b = x.shape[0]
     dev = x.device  # create the random numbers on the same device (GPU or CPU) as the data
     rad = lambda d: d * torch.pi / 180.0  # noqa: E731
