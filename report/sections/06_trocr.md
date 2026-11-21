@@ -32,7 +32,7 @@ Before the full run the model was trained on 100 training images (`configs/trocr
 
 ## 6.4 Results
 
-On the test split (12,869 images, greedy decoding, evaluated once; `results/trocr_full_greedy/metrics.json`) the model reaches CER 6.47 %, WER 22.32 % and word accuracy 77.68 % (Section 7.1), after 89.7 min of training, and needs 70.6 ms per image (batch size 1, GPU). Training used all the data, but only 5 epochs. On the fixed 1,500-image validation subset (`log.csv`), the validation CER fell from 0.1917 after the first epoch (epoch 0) to 0.0870 at the last and best epoch (epoch 4), with validation WER 0.2833 and train loss 0.027. Validation CER was still falling at the last epoch, so the model was not fully converged after 5 epochs.
+On the test split (12,869 images, greedy decoding, evaluated once; `results/trocr_full_greedy/metrics.json`) the model reaches CER 6.47 %, WER 22.32 % and word accuracy 77.68 % (Section 7.1), after 89.7 min of training, and needs 70.6 ms per image (batch size 1, GPU). Training used all the data, but only 5 epochs. On the fixed 1,500-image validation subset (`results/trocr_full_greedy/training_log.csv`), the validation CER fell from 0.1917 after the first epoch (epoch 0) to 0.0870 at the last and best epoch (epoch 4), with validation WER 0.2833 and train loss 0.027. Validation CER was still falling at the last epoch, so the model was not fully converged after 5 epochs.
 
 ## 6.5 Observations
 
