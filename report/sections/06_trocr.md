@@ -27,6 +27,8 @@ We start from the public checkpoint `microsoft/trocr-small-handwritten`, which w
 | Epochs / time budget | 5 epochs (about 90 min on a Colab GPU), well inside the 190 min cap; the best epoch was the last one (epoch 4) |
 | Seed | 42 |
 
+Table: Training setup of Model C (TrOCR-style).
+
 
 Before the full run the model was trained on 100 training images (`configs/trocr/overfit.yaml`) to check that it can memorise them: validation CER on those images reached 0.0000 at epoch 48 (49 epochs, 4.5 min), so the model, loss and decoding work end to end.
 

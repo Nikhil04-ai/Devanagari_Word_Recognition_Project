@@ -19,6 +19,8 @@ At prediction time, **greedy decoding** takes the most likely symbol in every co
 | Recurrent | 2-layer bidirectional LSTM, 256 hidden units, dropout 0.3 | T × 512 |
 | Output | Linear to (characters + blank), log-softmax | T × (C + 1) |
 
+Table: Architecture of Model B (CRNN).
+
 The network has 7,707,429 parameters (`results/crnn_full_greedy/metrics.json`). Because the width is divided by 4, an image of width 128 gives T = 32 time steps. CTC needs at least as many time steps as the label has characters plus one blank between equal neighbours, so we check that every label fits.
 
 ## 5.3 Training setup
@@ -34,6 +36,8 @@ The network has 7,707,429 parameters (`results/crnn_full_greedy/metrics.json`). 
 | Training | 25 epochs, 93 minutes on a Colab T4 GPU (about 3.7 minutes per epoch) |
 | Augmentation | none |
 | Seed | 42 |
+
+Table: Training setup of Model B (CRNN).
 
 Before the full run, the model was trained on 100 training images, with dropout switched off, to confirm the implementation. It reproduced all of them exactly (CER = 0) after 163 epochs (about 1,630 updates, 3.5 minutes on a GPU).
 

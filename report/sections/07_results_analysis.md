@@ -10,9 +10,13 @@ All models are evaluated on their own test set, once, with the shared metric cod
 | B: CRNN-CTC | IIIT-HW-Dev (12,869 words) | Word | greedy | 6.59 % | 26.05 % | 73.95 % | 7.71 M | 82.1 min |
 | C: TrOCR-style | IIIT-HW-Dev (12,869 words) | Word | greedy | 6.47 % | 22.32 % | 77.68 % | 28.86 M | 89.7 min |
 
+Table: Main comparison of the three models on their test sets.
+
 For Model B the train time is the time to the best epoch (epoch 22 of 25; the whole run took 93.3 min). For Model A, accuracy is the main metric, and its CER is computed over Unicode code points, so it is not exactly 1 − accuracy (क्ष, त्र and ज्ञ have three code points each).
 
 ![Test CER and WER of the three models](../../results/summary/results_chart.png)
+
+*Figure: test CER and WER of the three models (`results/summary/results_chart.png`).*
 
 ## 7.2 Why the character and word error rates are not directly comparable
 
@@ -36,7 +40,7 @@ Every test word occurs in the training split and the test writers are new, so th
 | 7 to 9 | 65.56 % | 6.70 % | 6.48 % |
 | 10 or more | 0.97 % (125 images) | 5.02 % | 4.73 % |
 
-*Source: `python report/tools/word_frequency.py`, which uses the shared metric code.*
+Table: Test CER of the word models grouped by how often the word occurs in training (source: `python report/tools/word_frequency.py`, which uses the shared metric code).
 
 The CER differs by less than 2 points across the groups and has no clear trend; the lowest value is in the 125-image group, which is too small to draw conclusions from.
 
@@ -56,6 +60,8 @@ Counts below are character errors (substitutions, deletions and insertions) on t
 | 4 | स → र (52) | ◌ं → ◌ँ (49) |
 | 5 | ध → घ (46) | ◌ू → ◌ु (49) |
 
+Table: Most frequent character substitutions of the word models.
+
 Both models mix up similar-looking consonants (त/न, ध/घ, म/ग) and the long and short vowel signs ◌ू and ◌ु. TrOCR also confuses anusvara and chandrabindu, ◌ं → ◌ँ, 49 times against 31 for the CRNN.
 
 **Kinds of errors.** Errors per true character of each type, counting insertions against the character type that was inserted:
@@ -66,6 +72,8 @@ Both models mix up similar-looking consonants (त/न, ध/घ, म/ग) and th
 | Vowel sign (matra) | 27.25 % | 4.94 % | 3.91 % |
 | Halant (conjuncts) | 6.41 % | 11.52 % | 14.29 % |
 | Anusvara / chandrabindu / visarga | 4.00 % | 10.33 % | 9.88 % |
+
+Table: Error rate of the word models per type of true character.
 
 Conjunct handling is the hardest for both models (the halant is wrong 11.5 % and 14.3 % of the time), and TrOCR is worse here than the CRNN, mainly because it inserts a halant that is not in the word (467 insertions against 273). Vowel signs are easier for TrOCR (3.91 % against 4.94 %), which fits the idea that a decoder that sees the neighbouring characters helps with signs whose form depends on the base letter, although we did not test this directly. The most frequent error is the plain consonant substitution; consonants make up about half of all errors for both models (51.9 % and 52.3 %).
 
@@ -79,7 +87,11 @@ Conjunct handling is the hardest for both models (the halant is wrong 11.5 % and
 | 8 to 10 | 2,292 | 6.80 % | 6.47 % |
 | 11 or more | 524 | 6.96 % | 8.29 % |
 
+Table: Test CER of the word models by word length.
+
 ![CER by word length for the word models](../../results/summary/cer_by_length.png)
+
+*Figure: test CER of the word models by word length (`results/summary/cer_by_length.png`).*
 
 The CRNN's CER is almost flat across lengths (6.30 to 7.10 %). TrOCR is better than the CRNN for words of 4 to 10 characters, but worse for the shortest words (1 to 3) and for the longest (11 or more, 8.29 %). The longest words are the ones most distorted when resized to a square input (Section 6.5), which may be one reason, but we did not test it.
 
