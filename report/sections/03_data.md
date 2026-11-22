@@ -18,7 +18,7 @@ Models B and C use IIIT-HW-Dev [3], released by CVIT, IIIT Hyderabad: more than 
 | Labels changed by NFC | 1,841 | 316 | 331 |
 | Images whose word occurs in training | n/a | 100 % | 100 % |
 
-*Source: `data/processed/words/stats.json`, written by `scripts/prepare_iiit.py`.*
+Table: Statistics of the IIIT-HW-Dev splits (source: `data/processed/words/stats.json`, written by `scripts/prepare_iiit.py`).
 
 ## 3.3 Preprocessing
 

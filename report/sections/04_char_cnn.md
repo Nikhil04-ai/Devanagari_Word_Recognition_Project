@@ -18,6 +18,8 @@ The CNN classifies one 32×32 grayscale image of a handwritten Devanagari conson
 | Training time | 1.5 min for 15 epochs on a Colab T4 GPU (about 6 s per epoch) |
 | Inference | 0.99 ms per image (T4, batch size 1) |
 
+Table: Architecture and training settings of Model A (CNN).
+
 Before the full run, the model memorised 100 training images (accuracy 1.0 after 8 epochs, no augmentation or regularisation). This sanity check shows that the data loading, labels and training loop are correct.
 
 ## 4.3 Results
@@ -30,6 +32,8 @@ The numbers come from `results/char_cnn_full_argmax/metrics.json`.
 | Test error rate (1 − accuracy) | 0.28 % (39 images) |
 | Macro F1 | 99.72 % |
 | Validation accuracy (best epoch) | 99.71 % |
+
+Table: Test results of Model A (`results/char_cnn_full_argmax/metrics.json`).
 
 The shared metric code computes CER over Unicode code points. The conjuncts क्ष, त्र and ज्ञ are three code points each, so the reported CER (0.30 %) differs slightly from 1 − accuracy. For this model, accuracy is the main number.
 
@@ -45,6 +49,8 @@ Validation accuracy is already 97.5 % after the first epoch and above 99 % from 
 | ढ | द | 3 |
 | ब | व | 2 |
 | च, ट, छ, य, ज्ञ | य, ठ, द, म, श | 1 each |
+
+Table: Most confused character pairs of Model A on the DHCD test set.
 
 ## 4.4 Observations
 

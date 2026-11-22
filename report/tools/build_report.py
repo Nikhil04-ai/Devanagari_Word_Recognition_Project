@@ -11,8 +11,19 @@ What it does:
 2. Drops any "*Owner: ...*" helper lines (notes to the writers, not report text).
 3. Converts Markdown to HTML (python-markdown, tables) and prints it to PDF with Microsoft Edge
    (headless), which shapes Devanagari correctly with the Windows "Nirmala UI" font.
-4. Prints the page count and file size (limit 10 MB, target 6 to 8 pages) and lists every line that
-   still contains a placeholder, "(check)" or an italic writer's note, with its file and line number.
+4. Lays the page out in the format of the instructor's ELCVIA template (ELCVIA_Template.pdf):
+   A4, 2 cm top and side margins, 17 x 25 cm text area, Times (title 16 pt bold, sections 14 pt,
+   subsections 12 pt, body 11 pt, abstract 10 pt, captions 11 pt), centred title and authors,
+   an "Abstract" block with "Key Words" between two rules, sections numbered "1 Introduction",
+   numbered captions below tables and figures ("Table 1: ..."), references as "[1] ...", and a
+   running header with page numbers on the outer side. Journal-only items of the template
+   (journal name, received/accepted dates, ISSN footnote) are left out on purpose.
+5. Prints the page count and file size (limit 10 MB; the template asks for 8 to 12 pages) and lists
+   every line that still contains a placeholder, "(check)" or an italic writer's note, with its file
+   and line number.
+
+Captions are written in the section files as a line "Table: text" after a table, or "*Figure: text*"
+after an image; this script numbers them in order.
 
 Needs: pip install markdown pypdf (in requirements/analysis.txt), and Microsoft Edge or Google Chrome.
 
@@ -55,8 +66,16 @@ MAX_MB = 10.0
 
 # Title block printed at the top of the PDF (also used as the HTML page title).
 TITLE = "Handwritten Devanagari Word Recognition: CRNN-CTC vs Transformer OCR (P09)"
-# Team member names printed under the title.
-TEAM = "Nikhil Kumar Mehta, Prabhat Patidar, Monu Rajpoot, Ravi Rajpoot"
+# Authors printed under the title, each with the roll number below the name.
+AUTHORS = [
+    ("Nikhil Kumar Mehta", "202410101200085"),
+    ("Prabhat Patidar", "202410101200093"),
+    ("Monu Rajpoot", "202410101200080"),
+    ("Ravi Rajpoot", "202410101200112"),
+]
+# Running header on every page after the first (the template uses "Name1 et al. / <journal>";
+# we use the first author and a short title instead of a journal name).
+RUNNING_HEAD = "Mehta et al. / Handwritten Devanagari Word Recognition"
 
 # Browsers to try, in this order. Full Windows paths first, then plain program names that are
 # looked up on PATH. find_browser() uses the first one that exists.
@@ -69,33 +88,59 @@ BROWSERS = [
 
 # Style sheet for the printed page. It is placed inside a <style> tag in build_html().
 # Notes are here, not inside the string, so the CSS text stays exactly as it is.
-# - @page: A4 paper with small margins.
-# - body: font list (Nirmala UI is the Windows font that draws Devanagari), 9 pt text, justified.
-# - h1.title and p.team: the title block. h1 and h2: section headings.
-# - table, th, td: thin borders; td.nw and th.nw: no line wrap (class added in build_html).
+# - @page: A4, margins 20 mm top and sides and 27 mm bottom, which gives the template's
+#   17 cm x 25 cm text area. The margin boxes hold the running header (centre) and the page number
+#   (outer side: left on even pages, right on odd pages); the first page has neither, as in the
+#   template. %RUNNING_HEAD% is replaced in build_html().
+# - body: Times New Roman 11 pt (Nirmala UI draws the Devanagari), justified; a paragraph that
+#   follows another paragraph starts with an indent, as in the template.
+# - .titleblock: title 16 pt bold, authors with roll numbers in italics, all centred.
+# - hr.rule and .abstract: the two rules and the 10 pt abstract with "Key Words".
+# - h1, h2, h3: section 14 pt, subsection 12 pt, subsubsection 11 pt, all bold; .num is the number.
+# - table, th, td: centred tables with thin black borders; td.nw and th.nw: no line wrap.
+# - p.caption: numbered table and figure captions, 11 pt, centred, below the table or figure.
 # - span.dv: Devanagari font for a lone vowel sign (see the regex in build_html).
 # - img: figures are limited in width and height and are centred.
-# - code and ol.refs: font sizes for code text and for the reference list.
+# - .refs: reference list as "[n] text" with a hanging indent.
 CSS = """
-@page { size: A4; margin: 12mm 13mm 12mm 13mm; }
-body { font-family: "Segoe UI", "Nirmala UI", "Noto Sans Devanagari", Arial, sans-serif;
-       font-size: 9pt; line-height: 1.2; color: #111; text-align: justify; }
-h1.title { font-size: 17pt; margin: 0 0 2px 0; text-align: center; }
-p.team { text-align: center; margin: 0 0 14px 0; color: #333; }
-h1 { font-size: 12.5pt; margin: 10px 0 3px 0; border-bottom: 1px solid #999; padding-bottom: 2px; }
-h2 { font-size: 11pt; margin: 10px 0 3px 0; }
-p, ul, ol { margin: 3px 0 6px 0; }
-li { margin: 1px 0; }
-table { border-collapse: collapse; margin: 6px 0 8px 0; font-size: 8.5pt; }
+@page { size: A4; margin: 20mm 20mm 27mm 20mm;
+        @top-center { content: "%RUNNING_HEAD%"; font-family: "Times New Roman", Times, serif;
+                      font-style: italic; font-size: 10pt; vertical-align: bottom; padding-bottom: 5mm; } }
+@page :left { @top-left { content: counter(page); font-family: "Times New Roman", Times, serif;
+                          font-size: 10pt; vertical-align: bottom; padding-bottom: 5mm; } }
+@page :right { @top-right { content: counter(page); font-family: "Times New Roman", Times, serif;
+                            font-size: 10pt; vertical-align: bottom; padding-bottom: 5mm; } }
+@page :first { @top-center { content: none; } @top-left { content: none; } @top-right { content: none; } }
+body { font-family: "Times New Roman", Times, "Nirmala UI", "Noto Sans Devanagari", serif;
+       font-size: 11pt; line-height: 1.2; color: #000; text-align: justify; }
+.titleblock { text-align: center; margin: 0 0 4pt 0; }
+h1.title { font-size: 16pt; font-weight: bold; margin: 0 0 12pt 0; }
+.authors { display: flex; flex-wrap: wrap; justify-content: center; gap: 4pt 22pt; }
+.author { font-size: 11pt; }
+.roll { display: block; font-style: italic; font-size: 10pt; }
+hr.rule { border: 0; border-top: 0.6pt solid #000; margin: 12pt 0; }
+.abstract { font-size: 10pt; margin: 0 2.4em; }
+.abstract .abs-title { font-weight: bold; text-align: center; margin: 0 0 5pt 0; }
+.abstract p { text-indent: 1.5em; }
+.abstract p.kw { text-indent: 0; margin-top: 7pt; }
+h1 { font-size: 14pt; font-weight: bold; margin: 16pt 0 6pt 0; page-break-after: avoid; }
+h2 { font-size: 12pt; font-weight: bold; margin: 11pt 0 4pt 0; page-break-after: avoid; }
+h3 { font-size: 11pt; font-weight: bold; margin: 9pt 0 3pt 0; page-break-after: avoid; }
+.num { margin-right: 0.9em; }
+p { margin: 0; }
+p + p { text-indent: 1.5em; }
+ul, ol { margin: 5pt 0; padding-left: 2.2em; }
+li { margin: 2pt 0; }
+table { border-collapse: collapse; margin: 7pt auto 3pt auto; font-size: 10pt; text-align: left; }
 tr { page-break-inside: avoid; }
-th, td { border: 1px solid #aaa; padding: 2px 6px; vertical-align: top; }
-th { background: #eee; }
+th, td { border: 0.6pt solid #000; padding: 1.5pt 5pt; vertical-align: top; }
+th { font-weight: bold; }
 td.nw, th.nw { white-space: nowrap; }
+p.caption { text-align: center; text-indent: 0; font-size: 11pt; margin: 3pt 0 10pt 0; }
 span.dv { font-family: "Nirmala UI", "Noto Sans Devanagari", sans-serif; display: inline-block; white-space: nowrap; }
-img { max-width: 62%; max-height: 4.4cm; display: block; margin: 6px auto 2px auto; page-break-inside: avoid; }
-code { font-family: Consolas, monospace; font-size: 8.8pt; }
-ol.refs { padding-left: 22px; font-size: 8.3pt; }
-ol.refs li { margin: 1px 0; }
+img { max-width: 65%; max-height: 5cm; display: block; margin: 7pt auto 2pt auto; page-break-inside: avoid; }
+code { font-family: Consolas, monospace; font-size: 9.5pt; }
+.refs p { padding-left: 2.2em; text-indent: -2.2em; margin: 2pt 0; }
 """
 
 # The placeholder word is assembled from two halves so that a text search of report/ finds only
@@ -158,12 +203,29 @@ def references_html():
             m = re.match(r"\|\s*\[(\d+)\]\s*\|\s*(.+?)\s*\|\s*$", line)
             if m:
                 items.append((int(m.group(1)), m.group(2)))
-    # Build one <li> per reference, sorted by number. value= keeps the original number in the list.
+    # Build one paragraph per reference, sorted by number, written "[n] text" as in the template.
     # markdown.markdown() wraps text in <p>...</p>; [3:-4] cuts off the 3-character <p> and the
     # 4-character </p> so only the inline HTML (links, italics) stays.
-    lis = "".join(f'<li value="{n}">{markdown.markdown(t)[3:-4]}</li>' for n, t in sorted(items))
-    # Return a heading plus the ordered list (class refs, styled in the CSS).
-    return f'<h1>References</h1>\n<ol class="refs">{lis}</ol>'
+    ps = "".join(f"<p>[{n}] {markdown.markdown(t)[3:-4]}</p>" for n, t in sorted(items))
+    # Return a heading plus the list (class refs, styled in the CSS).
+    return f'<h1>References</h1>\n<div class="refs">{ps}</div>'
+
+
+def number_captions(body):
+    """Turn caption lines into numbered captions, in document order.
+
+    "<p>Table: text</p>" becomes "Table 1: Text", "<p><em>Figure: text</em></p>" becomes
+    "Figure 1: Text"; tables and figures are counted separately, as in the template.
+    """
+    counters = {"Table": 0, "Figure": 0}
+
+    def repl(m):
+        kind = m.group(1) or m.group(3)
+        text = (m.group(2) or m.group(4)).strip()
+        counters[kind] += 1
+        return f'<p class="caption">{kind} {counters[kind]}: {text[:1].upper()}{text[1:]}</p>'
+
+    return re.sub(r"<p>(Table): (.+?)</p>|<p><em>(Figure): (.+?)</em></p>", repl, body)
 
 
 def find_open_items():
@@ -192,7 +254,9 @@ def build_html():
     """Build the full HTML page for the report and return it as one string.
     Order: title block, sections 01 to 08, references, then the later sections (09).
     """
-    parts = [f'<h1 class="title">{TITLE}</h1>', f'<p class="team">{TEAM}</p>']
+    authors = "".join(f'<span class="author">{name}<span class="roll">{roll}</span></span>'
+                      for name, roll in AUTHORS)
+    parts = [f'<div class="titleblock"><h1 class="title">{TITLE}</h1><div class="authors">{authors}</div></div>']
     # Markdown converter. 'tables' lets | a | b | tables work; 'sane_lists' makes lists behave as expected.
     md = markdown.Markdown(extensions=["tables", "sane_lists"])
     # Small helper: read one section file, drop the writer notes, convert it to HTML, keep the result.
@@ -208,6 +272,15 @@ def build_html():
         add(path)
     # Join all HTML parts into one body.
     body = "\n".join(parts)
+    # Abstract block of the template: the "**Abstract.** ..." paragraph and the "*Key Words*: ..."
+    # line at the top of 01_intro.md go between two rules, under a centred "Abstract" title.
+    body = re.sub(r"<p><strong>Abstract\.</strong>\s*(.+?)</p>\s*<p><em>Key Words</em>:\s*(.+?)</p>",
+                  r'<hr class="rule"><div class="abstract"><div class="abs-title">Abstract</div><p>\1</p>'
+                  r'<p class="kw"><em>Key Words</em>: \2</p></div><hr class="rule">', body, count=1, flags=re.S)
+    # Section numbers as in the template: "1 Introduction" (no dot after the number), "3.1 ...".
+    body = re.sub(r"<(h[123])>(\d+(?:\.\d+)*)\.?\s+", r'<\1><span class="num">\2</span>', body)
+    # Numbered table and figure captions.
+    body = number_captions(body)
     # Short table cells (numbers such as "0.30 %", model names such as "C: TrOCR-style") must not
     # wrap; longer text cells still wrap normally.
     # Find table cells (td or th) whose text is 1 to 14 characters with no tag inside, and add
@@ -222,7 +295,7 @@ def build_html():
     # so the same relative path still points to report/figures/.
     # Return the complete page. The CSS is placed inside the <style> tag.
     return f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{TITLE}</title>' \
-           f"<style>{CSS}</style></head><body>{body}</body></html>"
+           f"<style>{CSS.replace('%RUNNING_HEAD%', RUNNING_HEAD)}</style></head><body>{body}</body></html>"
 
 
 def find_browser():
@@ -300,9 +373,9 @@ def main():
     # File size in megabytes (1 MB = 1,000,000 bytes here).
     mb = os.path.getsize(pdf_path) / 1e6
     pages = page_count(pdf_path)
-    # Print the result: output path, page count (target 6 to 8) and size against the limit.
+    # Print the result: output path, page count (the ELCVIA template asks for 8 to 12) and size.
     print(f"PDF: {os.path.relpath(pdf_path, ROOT)}")
-    print(f"Pages: {pages if pages is not None else '? (pip install pypdf)'} (target 6 to 8)")
+    print(f"Pages: {pages if pages is not None else '? (pip install pypdf)'} (template: 8 to 12)")
     print(f"Size: {mb:.2f} MB (limit {MAX_MB:.0f} MB){'  <-- TOO LARGE' if mb > MAX_MB else ''}")
     # Show the remaining open items so they can be fixed before the final version.
     if open_items:
